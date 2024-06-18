@@ -7,6 +7,11 @@ from pydantic import BaseModel, Field
 from api.base_api import BaseAPI, JSON, EmptyData
 
 
+class PoolSource(Enum):
+    TOP = ''
+    TRENDING = 'trending_'
+
+
 class SortBy(Enum):
     TRANSACTIONS = 'h24_tx_count_desc'
     VOLUME = 'h24_volume_usd_desc'
@@ -50,8 +55,10 @@ class GeckoTerminalAPI(BaseAPI):
 
     BASE_URL = 'https://api.geckoterminal.com/api/v2'
     REQUESTS_LIMIT_PER_MINUTE = 30
+
     MIN_PAGE = 1
     MAX_PAGE = 10
+    ALL_PAGES = (MIN_PAGE, MAX_PAGE)
 
     NetworkId = str
     Address = str
@@ -64,9 +71,10 @@ class GeckoTerminalAPI(BaseAPI):
     async def _get_json(self, *url_path_segments, **params) -> JSON:
         return (await self._get(*url_path_segments, **params))[0]
 
-    async def get_top_pools(
+    async def get_pools(
             self,
             network: NetworkId,
+            pool_source: PoolSource = PoolSource.TOP,
             pages: Page or PageInterval = MIN_PAGE,
             sort_by: SortBy = SortBy.TRANSACTIONS
     ) -> list[Pool]:
@@ -76,7 +84,7 @@ class GeckoTerminalAPI(BaseAPI):
 
         for page in pages:
             response_json = await self._get_json(
-                'networks', network, 'pools',
+                'networks', network, pool_source.value + 'pools',
                 params={
                     'page': page,
                     'sort': sort_by.value,

@@ -16,7 +16,8 @@ from pytonapi import AsyncTonapi
 import network
 import settings
 from pools_with_api import PoolsWithAPI
-from network import Pools, Pool
+from network import Pool
+from pools import Pools
 from users import UserId, Users
 from utils import format_number, round_to_significant_figures, clear_from_html
 
@@ -182,7 +183,6 @@ class TONSonar:
         start_time = time.time()
 
         logger.info('Updating pools')
-        self.pools.clear()
         await self.geckoterminal_api.update_pools(self.pools)
         logger.info(f'Pools: {len(self.pools)}, Tokens: {len(self.pools.get_tokens())}')
 
