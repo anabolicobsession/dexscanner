@@ -19,7 +19,7 @@ from pools_with_api import PoolsWithAPI
 from network import Pool
 from pools import Pools
 from users import UserId, Users
-from utils import format_number, round_to_significant_figures, clear_from_html
+from utils import format_number, round_to_significant_figures, clear_from_html, difference_to_pretty_str
 
 root_logger = logging.getLogger()
 root_logger.setLevel(level=settings.LOGGING_LEVEL)
@@ -115,7 +115,7 @@ def pools_to_message(
         add_line('Volume:', format_number(pool.volume, 6, symbol='$', k_mode=True))
         add_line('Makers:', str(round_to_significant_figures(pool.makers, 2)))
         add_line('TXNs/Makers:', format_number(round(pool.transactions / pool.makers, 1), 3, 1))
-        add_line('Age:', pool.creation_date.difference_to_pretty_str())
+        add_line('Age:', difference_to_pretty_str(pool.creation_date))
 
         link_gecko = html.link('GeckoTerminal', f'https://www.geckoterminal.com/{settings.NETWORK}/pools/{pool.address}')
         link_dex = html.link('DEX Screener', f'https://dexscreener.com/{settings.NETWORK}/{pool.address}')

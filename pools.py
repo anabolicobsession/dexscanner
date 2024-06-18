@@ -1,47 +1,82 @@
-from typing import Callable
+from typing import Callable, Generic, TypeVar
 
-import settings
-from network import Pool, Token, DEX, Address
+from network import Pool, Token, DEX
+
+
+T = TypeVar('T')
+
+
+class SetWithGet(Generic[T], set):
+    def get(self, element: T, default: T = None) -> T | None:
+        for x in self:
+            if x == element:
+                return x
+        return default
+
+
+Filter = Callable[[Pool], bool]
+FilterKey = Callable[[Pool], float]
+
+PoolsType = SetWithGet[Pool]
+Tokens = SetWithGet[Token]
+DEXes = SetWithGet[DEX]
 
 
 class Pools:
     def __init__(
             self,
-            pool_filter: Callable[[Pool], bool] | None = None,
-            repeated_pool_filter_key: Callable[[Pool], float] | None = None,
+            pool_filter: Filter | None = None,
+            repeated_pool_filter_key: FilterKey | None = None,
     ):
-        self.pools: list[Pool] = []
-        self.tokens: set[Token] = set()
-        self.dexes: dict[DEXId, DEX] = {}
-        self.blacklist = dict[Address, str]
+        self.pools: PoolsType = SetWithGet()
+        self.tokens: Tokens = SetWithGet()
+        self.dexes: DEXes = SetWithGet()
         self.pool_filter = pool_filter
         self.repeated_pool_filter_key = repeated_pool_filter_key
-
-        with open(settings.BLACKLIST_FILENAME, 'r') as file:
-            self.blacklist = dict(csv.reader(file))
+        self._iterator = None
 
     def __len__(self):
         return len(self.pools)
 
-    def __getitem__(self, index) -> Pool:
-        return self.pools[index]
+    def __iter__(self):
+        self._iterator = iter(self.pools)
+        return self
 
-    def get_tokens(self) -> list[Token]:
-        return list(self.tokens.values())
+    def __next__(self):
+        return next(self._iterator)
 
-    def apply_filter(self):
-        if self.pool_filter:
-            filtered_pools = set(filter(self.pool_filter, self.pools))
-            filtered_out_pools = set(self.pools) - filtered_pools
-            filtered_out_tokens = set([p.base_token for p in filtered_out_pools]) - set([p.base_token for p in filtered_pools])
+    def get_tokens(self) -> Tokens:
+        return self.tokens
 
-            self.pools = list(filtered_pools)
-            self.tokens = list(set(self.tokens) - filtered_out_tokens)
+    def get_dexes(self) -> DEXes:
+        return self.dexes
 
-    def update(self, pool):
-        if pool.base_token.address in self.blacklist.keys():
-            return
+    def _ensure_consistent_token_and_dex_references(self, pool: Pool):
+        if existing_base_token := self.tokens.get(pool.base_token):
+            existing_base_token.update(pool.base_token)
+            pool.base_token = existing_base_token
+        else:
+            self.tokens.add(pool.base_token)
 
+        if existing_quote_token := self.tokens.get(pool.quote_token):
+            existing_quote_token.update(pool.quote_token)
+            pool.quote_token = existing_quote_token
+        else:
+            self.tokens.add(pool.quote_token)
+
+        if existing_dex := self.dexes.get(pool.dex):
+            existing_dex.update(pool.dex)
+            pool.dex = existing_dex
+        else:
+            self.dexes.add(pool.dex)
+
+    def _update(self, pool: Pool):
+        if existing_pool := self.pools.get(pool):
+            existing_pool.update(pool)
+        else:
+            self.pools.add(pool)
+
+    def update(self, pool: Pool):
         if self.pool_filter and not self.pool_filter(pool):
             return
 
@@ -49,26 +84,32 @@ class Pools:
             pool_with_same_token = None
 
             for p in self.pools:
-                if p.base_token == pool.base_token:
+                if p.base_token == pool.base_token and p.quote_token == pool.quote_token:
                     pool_with_same_token = p
                     break
 
             if pool_with_same_token:
                 if self.repeated_pool_filter_key(pool) > self.repeated_pool_filter_key(pool_with_same_token):
                     self.pools.remove(pool_with_same_token)
+                    self.dexes = DEXes([p.dex for p in self.pools])
                 else:
                     return
 
-        self.pools.append(pool)
-        self.tokens[pool.base_token.address] = pool.base_token
-        self.tokens[pool.quote_token.address] = pool.quote_token
-        self.dexes[pool.dex.id] = pool.dex
+        self._ensure_consistent_token_and_dex_references(pool)
+        self._update(pool)
 
-    def find_best_token_pool(self, token: Token, key: Callable) -> Pool | None:
-        pools = [p for p in self.pools if p.base_token == token]
+    def apply_filter(self):
+        if self.pool_filter:
+            self.pools = PoolsType(filter(self.pool_filter, self.pools))
+            self.tokens = Tokens(map(lambda p: p.base_token, self.pools)) | Tokens(map(lambda p: p.quote_token, self.pools))
+            self.tokens = DEXes(map(lambda p: p.dex, self.pools))
 
-        if pools:
-            pools.sort(key=key, reverse=True)
-            return pools[0]
+    def match_pool(self, token: Token, pool_filter_key: FilterKey) -> Pool | None:
+        matches = [p for p in self.pools if p.base_token == token]
+
+        if matches:
+            if not self.repeated_pool_filter_key:
+                matches.sort(key=pool_filter_key, reverse=True)
+            return matches[0]
 
         return None

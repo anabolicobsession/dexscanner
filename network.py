@@ -1,8 +1,8 @@
+from datetime import datetime
 from typing import Self
 from dataclasses import dataclass
 
 import settings
-from utils import DateTime
 
 
 Network = str
@@ -44,8 +44,8 @@ class DEX:
     def __hash__(self):
         return hash(self.id)
 
-    def update(self, dex: Self):
-        self.name = dex.name
+    def update(self, other: Self):
+        self.name = other.name
 
 
 @dataclass
@@ -58,60 +58,40 @@ class TimePeriodsData:
 
 @dataclass
 class Pool:
+    network: Network
     address: Address
-    base_token: Token = None
-    quote_token: Token = None
+    base_token: Token
+    quote_token: Token
 
+    price_usd: float
+    price_native: float
+    liquidity: float
+    volume: float
+    fdv: float
 
-    def __init__(
-            self,
-            quote_token,
-            dex,
-            creation_date: DateTime,
-
-            price,
-            price_in_native_token,
-            fdv,
-            market_cap,
-            volume,
-            liquidity,
-            transactions,
-            makers,
-
-            price_change: TimePeriodsData,
-            buys_sells_ratio: TimePeriodsData,
-            buyers_sellers_ratio: TimePeriodsData,
-            volume_ratio: TimePeriodsData
-    ):
-        self.address: Address = address
-        self.base_token: Token = base_token
-        self.quote_token: Token = quote_token
-        self.dex: DEX = dex
-        self.creation_date: DateTime = creation_date
-
-        self.price = price
-        self.price_in_native_token = price_in_native_token
-        self.fdv = fdv
-        self.market_cap = market_cap
-        self.volume = volume
-        self.liquidity = liquidity
-        self.transactions = transactions
-        self.makers = makers
-
-        self.price_change: TimePeriodsData = price_change
-        self.buys_sells_ratio: TimePeriodsData = buys_sells_ratio
-        self.buyers_sellers_ratio: TimePeriodsData = buyers_sellers_ratio
-        self.volume_ratio: TimePeriodsData = volume_ratio
+    price_change: TimePeriodsData
+    dex: DEX
+    creation_date: datetime
 
     def __eq__(self, other):
-        if isinstance(other, Pool):
-            return self.address == other.address
-        return False
+        return isinstance(other, Pool) and self.network == other.network and self.address == other.address
 
     def __hash__(self):
-        return self.address.__hash__()
+        return hash((self.network, self.address))
 
     def __repr__(self):
         return self.base_token.ticker + '/' + self.quote_token.ticker
 
+    def update(self, other: Self):
+        self.base_token.update(other.base_token)
+        self.quote_token.update(other.quote_token)
 
+        self.price_usd = other.price_usd
+        self.price_native = other.price_native
+        self.liquidity = other.liquidity
+        self.volume = other.volume
+        self.fdv = other.fdv
+
+        self.price_change = other.price_change
+        self.dex.update(other.dex)
+        self.creation_date = other.creation_date
