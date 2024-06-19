@@ -1,12 +1,38 @@
 from datetime import datetime
+from enum import Enum
 from typing import Self
 from dataclasses import dataclass
 
-import settings
 
-
-Network = str
+Id = str
 Address = str
+
+
+class UnknownNetwork(Exception):
+    ...
+
+
+@dataclass
+class _NetworkValue:
+    id: Id
+    native_token_address: Address
+
+
+class Network(Enum):
+    TON = _NetworkValue('ton', 'EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c')
+
+    def get_id(self) -> Id:
+        return self.value.id
+
+    def get_native_token_address(self) -> Address:
+        return self.value.native_token_address
+
+    @classmethod
+    def from_id(cls, id: Id) -> Self | None:
+        for network in cls:
+            if network.get_id() == id:
+                return network
+        raise UnknownNetwork(id)
 
 
 @dataclass
@@ -30,12 +56,12 @@ class Token:
         self.name = other.name
 
     def is_native_currency(self):
-        return self.address == settings.NETWORK_NATIVE_CURRENCY_ADDRESS
+        return self.address == self.network.get_native_token_address()
 
 
 @dataclass
 class DEX:
-    id: str
+    id: Id
     name: str = None
 
     def __eq__(self, other):

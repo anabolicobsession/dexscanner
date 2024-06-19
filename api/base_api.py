@@ -82,13 +82,26 @@ class BaseAPI:
     URL_PATH_SEPARATOR = '/'
     HEADERS = {'cache-control': 'max-age=0'}
 
-    def __init__(self, base_url, cooldown: Cooldown | None = None):
+    def __init__(self, base_url, request_limit: int = None, cooldown: Cooldown | None = None):
         self.base_url = base_url
         self.session = ClientSession(raise_for_status=True)
         self.cooldown = cooldown
 
+        self.request_counter = None
+        self.reset_request_counter()
+        self.REQUEST_LIMIT = request_limit
+
     async def close(self):
         await self.session.close()
+
+    def reset_request_counter(self):
+        self.request_counter = 0
+
+    def _increment_request_counter(self):
+        self.request_counter += 1
+
+    def get_requests_left(self) -> int | None:
+        return max(self.REQUEST_LIMIT - self.request_counter, 0) if self.REQUEST_LIMIT else None
 
     def _form_url(self, *path_segments):
         return BaseAPI.URL_PATH_SEPARATOR.join([self.base_url, *path_segments])
@@ -97,6 +110,7 @@ class BaseAPI:
         while True:
             try:
                 response = await self.session.get(self._form_url(*url_path_segments), **params, headers=BaseAPI.HEADERS)
+                self._increment_request_counter()
 
             except ClientResponseError as e:
 

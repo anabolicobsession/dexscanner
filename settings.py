@@ -2,6 +2,9 @@ import logging
 from datetime import timedelta
 import numpy as np
 
+from network import Network
+
+
 PRODUCTION_MODE = False
 PRODUCTION_BOT = False
 PRODUCTION_BOT = PRODUCTION_MODE & PRODUCTION_BOT
@@ -70,8 +73,7 @@ def should_be_notified(p):
     return is_pump(p) or is_dump(p)
 
 
-NETWORK = 'ton'
-NETWORK_NATIVE_CURRENCY_ADDRESS = 'EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c'
+NETWORK = Network.TON
 
 BLACKLIST_FILENAME = 'blacklist.csv'
 

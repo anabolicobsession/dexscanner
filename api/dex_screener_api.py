@@ -5,6 +5,10 @@ from pydantic import BaseModel, Field
 from api.base_api import BaseAPI, JSON, UnsupportedSchema
 
 
+NetworkId = str
+Address = str
+
+
 class Token(BaseModel):
     address: str = Field(...)
     ticker: str = Field(..., alias='symbol')
@@ -37,7 +41,7 @@ class Liquidity(BaseModel):
 
 
 class Pool(BaseModel):
-    network: str = Field(..., alias='chainId')
+    network_id: str = Field(..., alias='chainId')
     address: str = Field(..., alias='pairAddress')
     base_token: Token = Field(..., alias='baseToken')
     quote_token: Token = Field(..., alias='quoteToken')
@@ -60,13 +64,10 @@ class DEXScreenerAPI(BaseAPI):
 
     BASE_URL = 'https://api.dexscreener.io/latest/dex'
     SCHEMA_VERSION = '1.0.0'
-    REQUESTS_LIMIT_PER_MINUTE = 300
-
-    NetworkId = str
-    Address = str
+    MAX_ADDRESSES = 30
 
     def __init__(self, **params):
-        super().__init__(DEXScreenerAPI.BASE_URL, **params)
+        super().__init__(DEXScreenerAPI.BASE_URL, request_limit=300, **params)
 
     async def _get_json(self, *url_path_segments) -> JSON:
         json = (await self._get(*url_path_segments))[0]
@@ -77,6 +78,6 @@ class DEXScreenerAPI(BaseAPI):
         return json
 
     async def get_pools(self, network: NetworkId, pools: Address | list[Address]) -> list[Pool]:
-        pools_segment = pools if isinstance(pools, DEXScreenerAPI.Address) else ','.join(pools)
+        pools_segment = pools if isinstance(pools, Address) else ','.join(pools)
         json = await self._get_json('pairs', network, pools_segment)
         return [Pool(**pool_json) for pool_json in json['pairs']]

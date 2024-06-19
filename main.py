@@ -95,9 +95,6 @@ def pools_to_message(
             format_number(pool.price, 4, 9, symbol='$', significant_figures=2)
         )
 
-        if balance and balance[i]: add_line('Balance:', f'{round_to_significant_figures(balance[i], 3)} {settings.NETWORK.upper()}')
-        if change and change[i]: add_line('Change:', format_number(change[i], 4, sign=True, percent=True, significant_figures=2))
-
         left = 3
 
         m5 = format_number(pool.price_change.m5, left, sign=True, percent=True, significant_figures=2)
@@ -117,8 +114,8 @@ def pools_to_message(
         add_line('TXNs/Makers:', format_number(round(pool.transactions / pool.makers, 1), 3, 1))
         add_line('Age:', difference_to_pretty_str(pool.creation_date))
 
-        link_gecko = html.link('GeckoTerminal', f'https://www.geckoterminal.com/{settings.NETWORK}/pools/{pool.address}')
-        link_dex = html.link('DEX Screener', f'https://dexscreener.com/{settings.NETWORK}/{pool.address}')
+        link_gecko = html.link('GeckoTerminal', f'https://www.geckoterminal.com/{settings.NETWORK.get_id()}/pools/{pool.address}')
+        link_dex = html.link('DEX Screener', f'https://dexscreener.com/{settings.NETWORK.get_id()}/{pool.address}')
         links = link_dex + html.code(spaces(line_width - 22)) + link_gecko
 
         new_pool_message = get_updated_message_pools(html.code('\n'.join(lines)) + '\n' + links + '\n' + html.code(pool.base_token.address))

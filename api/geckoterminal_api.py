@@ -7,6 +7,12 @@ from pydantic import BaseModel, Field
 from api.base_api import BaseAPI, JSON, EmptyData
 
 
+NetworkId = str
+Address = str
+Page = int
+PageInterval = tuple[Page, Page]
+
+
 class PoolSource(Enum):
     TOP = ''
     TRENDING = 'trending_'
@@ -39,7 +45,7 @@ class Currency(Enum):
 
 
 class Pool(BaseModel):
-    address: str = Field(...)
+    address: Address = Field(...)
 
 
 class Candlestick(BaseModel):
@@ -54,19 +60,13 @@ class Candlestick(BaseModel):
 class GeckoTerminalAPI(BaseAPI):
 
     BASE_URL = 'https://api.geckoterminal.com/api/v2'
-    REQUESTS_LIMIT_PER_MINUTE = 30
 
     MIN_PAGE = 1
     MAX_PAGE = 10
     ALL_PAGES = (MIN_PAGE, MAX_PAGE)
 
-    NetworkId = str
-    Address = str
-    Page = int
-    PageInterval = tuple[Page, Page]
-
     def __init__(self, **params):
-        super().__init__(GeckoTerminalAPI.BASE_URL, **params)
+        super().__init__(GeckoTerminalAPI.BASE_URL, request_limit=30, **params)
 
     async def _get_json(self, *url_path_segments, **params) -> JSON:
         return (await self._get(*url_path_segments, **params))[0]
