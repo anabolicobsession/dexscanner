@@ -1,11 +1,15 @@
-from datetime import timedelta
+from datetime import timedelta, timezone, datetime
 from itertools import chain
 
-from network import Pool, Network, Token, TimePeriodsData, DEX
+from network import Pool, Network, Token, TimePeriodsData, DEX, Candlestick
 from pools import Pools
-from api.geckoterminal_api import GeckoTerminalAPI, PoolSource, SortBy, Pool as DEXScreenerPool, Timeframe, Currency
+from api.geckoterminal_api import GeckoTerminalAPI, PoolSource, SortBy, Pool as DEXScreenerPool, Timeframe, Currency, \
+    Candlestick as GeckoTerminalCandlestick
 from api.dex_screener_api import DEXScreenerAPI
 import settings
+
+
+_NO_UPDATE = -1
 
 
 def make_batches(sequence: list, n: int) -> list[list]:
@@ -23,6 +27,7 @@ class PoolsWithAPI(Pools):
         self.geckoterminal_api = GeckoTerminalAPI()
         self.dex_screener_api = DEXScreenerAPI()
         self.update_counter = 0
+        self.last_chart_update: dict[Pool, int] = {}
         
     async def close_api_sessions(self):
         await self.geckoterminal_api.close()
@@ -35,7 +40,7 @@ class PoolsWithAPI(Pools):
         return self.update_counter % every_update == 0
 
     @staticmethod
-    def _dex_screener_pool_to_network_pool(p: DEXScreenerPool) -> Pool:
+    def _dex_screener_pool_to_pool(p: DEXScreenerPool) -> Pool:
         return Pool(
             network=Network.from_id(p.network_id),
             address=p.address,
@@ -68,36 +73,72 @@ class PoolsWithAPI(Pools):
             creation_date=p.creation_date,
         )
 
+    @staticmethod
+    def _geckoterminal_candlestick_to_candlestick(c: GeckoTerminalCandlestick) -> Candlestick:
+        return Candlestick(
+            timestamp=c.timestamp,
+            price=c.close,
+            volume=c.volume,
+        )
+
     async def update_using_api(self):
         if self._satisfy(PoolsWithAPI.APPLY_FILTER_EVERY_UPDATE):
             self.apply_filter()
 
-        addresses = []
+        new_addresses = []
         if self._satisfy(PoolsWithAPI.CHECK_FOR_NEW_TOKENS_EVERY_UPDATE):
 
             for source in (PoolSource.TOP, PoolSource.TRENDING):
-                addresses.extend([p.address for p in await self.geckoterminal_api.get_pools(
+                new_addresses.extend(await self.geckoterminal_api.get_pools(
                     settings.NETWORK.get_id(),
                     pool_source=source,
                     pages=GeckoTerminalAPI.ALL_PAGES,
                     sort_by=SortBy.VOLUME,
-                )])
+                ))
 
-        self.update(list(chain(*[
-            map(self._dex_screener_pool_to_network_pool, await self.dex_screener_api.get_pools(settings.NETWORK.get_id(), batch))
-            for batch in make_batches(addresses, DEXScreenerAPI.MAX_ADDRESSES)
-        ])))
+        timestamp = datetime.now(timezone.utc)
+        rounded_timestamp = timestamp - timedelta(
+            minutes=timestamp.minute % 10,
+            seconds=timestamp.second,
+            microseconds=timestamp.microsecond,
+        )
 
-        priority_list = [(p.address, p.volume * p.price_change.h1) for p in self]
-        priority_list.sort(key=lambda t: t[1], reverse=True)
+        all_addresses = list(set([p.address for p in self]) | set(new_addresses))
+        self.update(
+            list(chain(*[
+                map(
+                    self._dex_screener_pool_to_pool,
+                    await self.dex_screener_api.get_pools(settings.NETWORK.get_id(), batch)
+                )
+                for batch in make_batches(all_addresses, DEXScreenerAPI.MAX_ADDRESSES)
+            ]))
+        )
 
-        for address in map(lambda t: t[0], priority_list[:self.geckoterminal_api.get_requests_left()]):
-            await self.geckoterminal_api.get_ohlcv(
-                settings.NETWORK.get_id(),
-                pool_address=address,
-                timeframe=Timeframe.Minute.ONE,
-                currency=Currency.TOKEN,
-            )
+        # add the latest price to the chart, because GeckoTerminal (OHLCV) requests have quota
+        for p in self:
+            p.chart.update(Candlestick(rounded_timestamp, p.price_native))
+
+        # update OHLCV of the most perspective pools (double-level sorting is used)
+        priority_list = [
+            (
+                p,
+                self.last_chart_update.get(p, _NO_UPDATE),
+                p.volume * abs(p.price_change.h1),
+            ) for p in self
+        ]
+        priority_list.sort(key=lambda t: (t[1], -t[2]))
+        pools_for_chart_update = [t[0] for t in priority_list[:self.geckoterminal_api.get_requests_left()]]
+
+        for pool in pools_for_chart_update:
+            pool.chart.update([
+                self._geckoterminal_candlestick_to_candlestick(c) for c in await self.geckoterminal_api.get_ohlcv(
+                    settings.NETWORK.get_id(),
+                    pool_address=pool.address,
+                    timeframe=Timeframe.Minute.ONE,
+                    currency=Currency.TOKEN,
+                )
+             ])
+            self.last_chart_update[pool] = self.update_counter
 
         self._increment_update_counter()
         self.geckoterminal_api.reset_request_counter()
