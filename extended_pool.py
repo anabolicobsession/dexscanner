@@ -1,5 +1,9 @@
 from dataclasses import dataclass
 from datetime import datetime
+from itertools import chain
+from typing import Self, Iterable
+
+from network import Pool as NetworkPool, DEX
 
 
 Index = int
@@ -13,8 +17,8 @@ class OutdatedData(Exception):
     ...
 
 
-@dataclass
-class _BaseTick:
+@dataclass(frozen=True)
+class BaseTick:
     timestamp: datetime
     price: float
 
@@ -22,11 +26,13 @@ class _BaseTick:
         return f'{self.__name__}({self.timestamp}, {self.price})'
 
 
-class Tick(_BaseTick):
+@dataclass(frozen=True)
+class Tick(BaseTick):
     volume: float
 
 
-class IncompleteTick(_BaseTick):
+@dataclass(frozen=True)
+class IncompleteTick(BaseTick):
     ...
 
 
@@ -37,9 +43,38 @@ class Segment:
     end: Index
 
 
+class CircularList(list):
+    def __init__(self, capacity):
+        super().__init__()
+        self.capacity = capacity
+        self.next = 0
+        self.iterator = None
+
+    def __iter__(self):
+        if len(self) < self.capacity or len(self) == self.capacity and self.next == 0:
+            return super().__iter__()
+        else:
+            return chain(self[self.next:], self[:self.next])
+
+    def __repr__(self):
+        return '[' + ', '.join([repr(item) for item in self]) + ']'
+
+    def append(self, item):
+        if len(self) < self.capacity:
+            super().append(item)
+        else:
+            self[self.next] = item
+
+        self.next = (self.next + 1) % self.capacity
+
+    def extend(self, iterable: Iterable):
+        for item in iterable:
+            self.append(item)
+
+
 class Chart:
     def __init__(self):
-        self.ticks: list[Tick] = []
+        self.ticks: list[BaseTick] = []
         self.segments = None
 
     def update(self, ticks: Tick | list[Tick]):
@@ -82,6 +117,41 @@ class Chart:
 
         segments = [Segment(c, beginning=i, end=i) for i, c in enumerate(changes)]
 
-
     def has_signal(self):
         pass
+
+
+@dataclass
+class TimePeriodsData:
+    m5:  float = None
+    h1:  float = None
+    h6:  float = None
+    h24: float = None
+
+
+@dataclass
+class Pool(NetworkPool):
+    price_usd: float
+    price_native: float
+    liquidity: float
+    volume: float
+    fdv: float
+
+    price_change: TimePeriodsData
+    dex: DEX
+    creation_date: datetime
+
+    chart: Chart = Chart()
+
+    def update(self, other: Self):
+        super().update(other)
+
+        self.price_usd = other.price_usd
+        self.price_native = other.price_native
+        self.liquidity = other.liquidity
+        self.volume = other.volume
+        self.fdv = other.fdv
+
+        self.price_change = other.price_change
+        self.dex.update(other.dex)
+        self.creation_date = other.creation_date

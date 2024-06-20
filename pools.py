@@ -34,17 +34,11 @@ class Pools:
         self.pool_filter = pool_filter
         self.repeated_pool_filter_key = repeated_pool_filter_key
 
-        self._iterator = None
-
     def __len__(self):
         return len(self.pools)
 
     def __iter__(self):
-        self._iterator = iter(self.pools)
-        return self
-
-    def __next__(self):
-        return next(self._iterator)
+        return iter(self.pools)
 
     def get_tokens(self) -> Tokens:
         return self.tokens

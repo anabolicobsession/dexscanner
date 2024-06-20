@@ -1,8 +1,8 @@
 from datetime import timedelta, timezone, datetime
 from itertools import chain
 
-from network import Pool, Network, Token, TimePeriodsData, DEX
-from pool_with_chart import Tick
+from network import Network, Token, DEX
+from extended_pool import Pool, Tick, TimePeriodsData
 from pools import Pools
 from api.geckoterminal_api import GeckoTerminalAPI, PoolSource, SortBy, Pool as DEXScreenerPool, Timeframe, Currency, \
     Candlestick as GeckoTerminalCandlestick
