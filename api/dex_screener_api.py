@@ -1,6 +1,4 @@
-from datetime import datetime
-
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, AwareDatetime
 
 from api.base_api import BaseAPI, JSON, UnsupportedSchema
 
@@ -56,7 +54,7 @@ class Pool(BaseModel):
     transactions: TimePeriodsTransactionCounts = Field(..., alias="txns")
 
     dex_id: str = Field(..., alias='dexId')
-    creation_date: datetime = Field(..., alias='pairCreatedAt')
+    creation_date: AwareDatetime = Field(..., alias='pairCreatedAt')
     url: str = Field(...)
 
 

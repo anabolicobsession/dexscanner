@@ -12,21 +12,12 @@ class UnknownNetwork(Exception):
     ...
 
 
-class TimeGapBetweenCharts(Exception):
-    ...
-
-
-class OutdatedData(Exception):
-    ...
-
-
-@dataclass
-class _NetworkValue:
-    id: Id
-    native_token_address: Address
-
-
 class Network(Enum):
+    @dataclass
+    class _NetworkValue:
+        id: Id
+        native_token_address: Address
+
     TON = _NetworkValue('ton', 'EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c')
 
     def get_id(self) -> Id:
@@ -91,56 +82,6 @@ class TimePeriodsData:
 
 
 @dataclass
-class Candlestick:
-    timestamp: datetime
-    price: float
-    volume: float = None
-
-    def __repr__(self):
-        return f'{self.__name__}({self.timestamp}, {self.price})'
-
-
-@dataclass
-class Segment:
-    change: float
-
-
-class Chart:
-    def __init__(self):
-        self.candlesticks: list[Candlestick] = []
-
-    def update(self, candlesticks: Candlestick | list[Candlestick]):
-        if not isinstance(candlesticks, Candlestick):
-
-            if not self.candlesticks:
-                self.candlesticks = candlesticks
-            else:
-                oldest_timestamp = candlesticks[0].timestamp
-
-                if idx_to_insert := next(
-                    (i for i in range(len(self.candlesticks)) if self.candlesticks[i].timestamp == oldest_timestamp),
-                    None
-                ):
-                    self.candlesticks[idx_to_insert:] = candlesticks
-                else:
-                    raise TimeGapBetweenCharts('Charts are too far in time from each other to be concatenated')
-        else:
-            if self.candlesticks:
-                new_candlestick = candlesticks
-                last_candlestick = self.candlesticks[-1]
-
-                if   new_candlestick.timestamp >  last_candlestick.timestamp:
-                    self.candlesticks.append(new_candlestick)
-                elif new_candlestick.timestamp == last_candlestick.timestamp:
-                    last_candlestick.price = new_candlestick.price
-                else:
-                    raise OutdatedData(f'Candlestick is too outdated to be inserted: {new_candlestick}')
-
-    def has_signal(self):
-        pass
-
-
-@dataclass
 class Pool:
     network: Network
     address: Address
@@ -156,8 +97,6 @@ class Pool:
     price_change: TimePeriodsData
     dex: DEX
     creation_date: datetime
-
-    chart: Chart = Chart()
 
     def __eq__(self, other):
         return isinstance(other, Pool) and self.network == other.network and self.address == other.address

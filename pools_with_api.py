@@ -1,7 +1,8 @@
 from datetime import timedelta, timezone, datetime
 from itertools import chain
 
-from network import Pool, Network, Token, TimePeriodsData, DEX, Candlestick
+from network import Pool, Network, Token, TimePeriodsData, DEX
+from pool_with_chart import Tick
 from pools import Pools
 from api.geckoterminal_api import GeckoTerminalAPI, PoolSource, SortBy, Pool as DEXScreenerPool, Timeframe, Currency, \
     Candlestick as GeckoTerminalCandlestick
@@ -74,8 +75,8 @@ class PoolsWithAPI(Pools):
         )
 
     @staticmethod
-    def _geckoterminal_candlestick_to_candlestick(c: GeckoTerminalCandlestick) -> Candlestick:
-        return Candlestick(
+    def _geckoterminal_candlestick_to_candlestick(c: GeckoTerminalCandlestick) -> Tick:
+        return Tick(
             timestamp=c.timestamp,
             price=c.close,
             volume=c.volume,
@@ -98,7 +99,6 @@ class PoolsWithAPI(Pools):
 
         timestamp = datetime.now(timezone.utc)
         rounded_timestamp = timestamp - timedelta(
-            minutes=timestamp.minute % 10,
             seconds=timestamp.second,
             microseconds=timestamp.microsecond,
         )
@@ -116,7 +116,7 @@ class PoolsWithAPI(Pools):
 
         # add the latest price to the chart, because GeckoTerminal (OHLCV) requests have quota
         for p in self:
-            p.chart.update(Candlestick(rounded_timestamp, p.price_native))
+            p.chart.update(Tick(rounded_timestamp, p.price_native))
 
         # update OHLCV of the most perspective pools (double-level sorting is used)
         priority_list = [

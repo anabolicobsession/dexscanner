@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, AwareDatetime
 
 from api.base_api import BaseAPI, JSON, EmptyData
 
@@ -49,7 +49,7 @@ class Pool(BaseModel):
 
 
 class Candlestick(BaseModel):
-    timestamp: datetime = Field(...)
+    timestamp: AwareDatetime = Field(...)
     open: float = Field(...)
     high: float = Field(...)
     low: float = Field(...)
