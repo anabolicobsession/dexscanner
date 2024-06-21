@@ -1,4 +1,5 @@
 import logging
+from abc import ABC
 from asyncio import sleep
 from copy import deepcopy
 from datetime import timedelta
@@ -77,7 +78,7 @@ class EmptyData(Exception):
     ...
 
 
-class BaseAPI:
+class BaseAPI(ABC):
 
     URL_PATH_SEPARATOR = '/'
     HEADERS = {'cache-control': 'max-age=0'}

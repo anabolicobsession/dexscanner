@@ -1,12 +1,20 @@
+from abc import ABC
+from collections import deque
 from dataclasses import dataclass
 from datetime import datetime
 from itertools import chain
-from typing import Self, Iterable
+from typing import Self, Iterable, Collection
 
 from network import Pool as NetworkPool, DEX
 
 
+TICK_MERGE_MAXIMUM_CHANGE = 0.03
+
+
 Index = int
+
+
+CHART_MAX_TICKS = 2000
 
 
 class TimeGapBetweenCharts(Exception):
@@ -18,7 +26,15 @@ class OutdatedData(Exception):
 
 
 @dataclass(frozen=True)
-class BaseTick:
+class _AbstractDataclass(ABC):
+    def __new__(cls, *args, **kwargs):
+        if cls == _AbstractDataclass or cls.__bases__[0] == _AbstractDataclass:
+            raise TypeError('Can\'t instantiate an abstract class')
+        return super().__new__(cls)
+
+
+@dataclass(frozen=True)
+class BaseTick(_AbstractDataclass):
     timestamp: datetime
     price: float
 
@@ -36,73 +52,136 @@ class IncompleteTick(BaseTick):
     ...
 
 
-@dataclass
-class Segment:
-    change: float
-    beginning: Index
-    end: Index
-
-
 class CircularList(list):
     def __init__(self, capacity):
-        super().__init__()
+        super().__init__([None] * capacity)
+        self.beginning = 0
+        self.size = 0
         self.capacity = capacity
-        self.next = 0
-        self.iterator = None
+
+    def _get_index(self, shift):
+        base = self.beginning if shift >= 0 else self.beginning + self.size
+        return (base + shift) % self.capacity
+
+    def _is_integral(self):
+        return self.beginning + self.size <= self.capacity
+
+    def __len__(self):
+        return self.size
+
+    def __getitem__(self, index: Index | slice):
+        if isinstance(index, int):
+            if not -self.size < index < self.size:
+                raise IndexError(f'Index out of range: {index}')
+            return super().__getitem__(self._get_index(index))
+        else:
+            start = index.start if index.start is not None else 0
+            stop = index.stop if index.stop is not None else self.size
+
+            if start > stop or start < 0 or stop > self.size:
+                raise IndexError(f'Slice out of range: {start}:{stop}')
+
+            start = self._get_index(start)
+            stop = self._get_index(stop)
+
+            if self._is_integral() or stop > start or index.start == index.stop:
+                return super().__getitem__(slice(start, stop))
+            else:
+                return list(chain(
+                    super().__getitem__(slice(start, self.capacity)),
+                    super().__getitem__(slice(stop)),
+                ))
 
     def __iter__(self):
-        if len(self) < self.capacity or len(self) == self.capacity and self.next == 0:
-            return super().__iter__()
-        else:
-            return chain(self[self.next:], self[:self.next])
+        for index in range(self.size):
+            yield super().__getitem__(self._get_index(index))
 
     def __repr__(self):
         return '[' + ', '.join([repr(item) for item in self]) + ']'
 
-    def append(self, item):
-        if len(self) < self.capacity:
-            super().append(item)
-        else:
-            self[self.next] = item
+    def get_internal_repr(self):
+        super_class = super()
+        internal = [repr(super_class.__getitem__(i)) for i in range(self.capacity)]
+        return '[' + ', '.join(internal) + ']'
 
-        self.next = (self.next + 1) % self.capacity
+    def append(self, item):
+        index = self._get_index(self.size)
+
+        if self.size < self.capacity:
+            self.size += 1
+        else:
+            self.beginning = self._get_index(1)
+
+        self[index] = item
 
     def extend(self, iterable: Iterable):
         for item in iterable:
             self.append(item)
 
+    def set(self, index: Index, iterable: Collection):
+        if not 0 <= index <= self.size:
+            raise IndexError(f'Index out of range: {index}')
+
+        if index + len(iterable) >= self.size:
+            self.size = index
+            self.extend(iterable)
+        else:
+            raise IndexError(
+                'Too few items to set or too small index. '
+                'New items must override existing items for a small enough index, otherwise behaviour is undefined'
+            )
+
+    def pop(self, index=None):
+        if self.size:
+            self[self._get_index(self.size - 1)] = None
+            self.size -= 1
+        else:
+            raise IndexError('No items to pop')
+
+
+@dataclass
+class Trend:
+    change: float
+    beginning: Index
+    end: Index
+
+    def __add__(self, other) -> Self:
+        return Trend(self.change + other.change, self.beginning, other.end)
+
+    @staticmethod
+    def have_same_trend(a, b):
+        return a.change * b.change >= 0
+
+    @staticmethod
+    def can_be_merged(a, b, c):
+        if Trend.have_same_trend(a, c) and not Trend.have_same_trend(a, b):
+            return a.change + c.change >= b.change and b.change <= TICK_MERGE_MAXIMUM_CHANGE
+        return False
+
 
 class Chart:
     def __init__(self):
-        self.ticks: list[BaseTick] = []
-        self.segments = None
+        self.ticks: CircularList[BaseTick] = CircularList(capacity=CHART_MAX_TICKS)
+        self.trends: deque[Trend] | None = None
 
-    def update(self, ticks: Tick | list[Tick]):
-        if not isinstance(ticks, Tick):
+    def __repr__(self):
+        return f'{type(self).__name__}({[repr(t) for t in self.ticks]})'
 
-            if not self.ticks:
-                self.ticks = ticks
-            else:
-                oldest_timestamp = ticks[0].timestamp
+    def update(self, ticks: BaseTick | Collection[BaseTick]):
+        if isinstance(ticks, BaseTick):
+            ticks = [ticks]
 
-                if idx_to_insert := next(
-                    (i for i in range(len(self.ticks)) if self.ticks[i].timestamp == oldest_timestamp),
-                    None
-                ):
-                    self.ticks[idx_to_insert:] = ticks
-                else:
-                    raise TimeGapBetweenCharts('Charts are too far in time from each other to be concatenated')
-        else:
-            if self.ticks:
-                new_candlestick = ticks
-                last_candlestick = self.ticks[-1]
-
-                if   new_candlestick.timestamp >  last_candlestick.timestamp:
-                    self.ticks.append(new_candlestick)
-                elif new_candlestick.timestamp == last_candlestick.timestamp:
-                    last_candlestick.price = new_candlestick.price
-                else:
-                    raise OutdatedData(f'Candlestick is too outdated to be inserted: {new_candlestick}')
+        if ticks:
+            self.ticks.set(
+                next(
+                    (
+                        i for i in range(len(self.ticks))
+                        if ticks[0].timestamp >= self.ticks[i].timestamp
+                    ),
+                    len(self.ticks)
+                ),
+                ticks
+            )
 
     def _construct_segments(self):
         prices = [c.price for c in self.ticks]
@@ -115,7 +194,49 @@ class Chart:
             )
         ]
 
-        segments = [Segment(c, beginning=i, end=i) for i, c in enumerate(changes)]
+        trends = deque(Trend(c, beginning=i, end=i) for i, c in enumerate(changes))
+
+        i = 0
+        while i + 2 < len(trends):
+            t1, t2, t3 = trends[i], trends[i + 1], trends[i + 2]
+
+            if Trend.have_same_trend(t1, t2):
+                trends.remove(t1)
+                trends.remove(t2)
+                trends.insert(i, t1 + t2)
+                i = max(i - 2, 0)
+                continue
+
+            if Trend.have_same_trend(t2, t3):
+                trends.remove(t2)
+                trends.remove(t3)
+                trends.insert(i, t2 + t3)
+                i = max(i - 2, 0)
+                continue
+
+            if Trend.can_be_merged(t1, t2, t3):
+                trends.remove(t1)
+                trends.remove(t2)
+                trends.remove(t3)
+                trends.insert(i, t1 + t2 + t3)
+                i = max(i - 2, 0)
+                continue
+
+            i += 1
+
+        self.trends = trends
+
+    def get_ticks_separated_by_trend(self) -> tuple[list[Trend], list[Trend]]:
+        uptrends = []
+        downtrends = []
+
+        for t in self.trends:
+            if t.change > 0:
+                uptrends.append(t)
+            else:
+                downtrends.append(t)
+
+        return uptrends, downtrends
 
     def has_signal(self):
         pass

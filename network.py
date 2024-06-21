@@ -18,7 +18,6 @@ class _NetworkValue:
 
 
 class Network(Enum):
-
     TON = _NetworkValue('ton', 'EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c')
 
     def __repr__(self):
