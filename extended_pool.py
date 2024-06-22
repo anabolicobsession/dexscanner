@@ -1,14 +1,14 @@
 from abc import ABC
 from collections import deque
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from itertools import chain
-from typing import Self, Iterable, Collection
+from typing import Self, Iterable, Collection, Sequence
 
 from network import Pool as NetworkPool, DEX
 
 
-TICK_MERGE_MAXIMUM_CHANGE = 0.03
+TICK_MERGE_MAXIMUM_CHANGE = 0.05
 
 
 Index = int
@@ -139,7 +139,7 @@ class CircularList(list):
             raise IndexError('No items to pop')
 
 
-@dataclass
+@dataclass(frozen=True)
 class Trend:
     change: float
     beginning: Index
@@ -155,14 +155,58 @@ class Trend:
     @staticmethod
     def can_be_merged(a, b, c):
         if Trend.have_same_trend(a, c) and not Trend.have_same_trend(a, b):
-            return a.change + c.change >= b.change and b.change <= TICK_MERGE_MAXIMUM_CHANGE
+            return abs(b.change) <= min(abs(a.change), abs(c.change)) and abs(b.change) <= TICK_MERGE_MAXIMUM_CHANGE
         return False
+
+
+@dataclass(frozen=True)
+class Pattern:
+    min_change: float
+    min_duration: timedelta = None
+    max_duration: timedelta = None
+
+    def match(self, trend: Trend, ticks: Sequence[BaseTick]):
+
+        if trend.change >= self.min_change >= 0 or 0 >= self.min_change >= trend.change:
+
+            duration = ticks[trend.end].timestamp - ticks[trend.beginning].timestamp
+
+            if self.min_duration and duration < self.min_duration:
+                return False
+
+            if self.max_duration and duration > self.max_duration:
+                return False
+
+            return True
+
+        return False
+
+
+def _fraction(percent):
+    return percent / 100
+
+
+_UPTREND = [
+    Pattern(_fraction(5), min_duration=timedelta(minutes=20)),
+]
+
+_DUMP = [
+    Pattern(_fraction(-5),  max_duration=timedelta(minutes=10)),
+]
+
+_DOWNTREND_REVERSAL = [
+    Pattern(_fraction(-10), min_duration=timedelta(minutes=20)),
+    Pattern(_fraction(3)),
+]
+
+PATTERNS = [_DUMP, _UPTREND, _DOWNTREND_REVERSAL]
 
 
 class Chart:
     def __init__(self):
         self.ticks: CircularList[BaseTick] = CircularList(capacity=CHART_MAX_TICKS)
         self.trends: deque[Trend] | None = None
+        self.signal_end_timestamp: datetime | None = None
 
     def __repr__(self):
         return f'{type(self).__name__}({[repr(t) for t in self.ticks]})'
@@ -194,7 +238,7 @@ class Chart:
             )
         ]
 
-        trends = deque(Trend(c, beginning=i, end=i) for i, c in enumerate(changes))
+        trends = deque(Trend(c, beginning=i - 1 if i else 0, end=i) for i, c in enumerate(changes))
 
         i = 0
         while i + 2 < len(trends):
@@ -210,7 +254,7 @@ class Chart:
             if Trend.have_same_trend(t2, t3):
                 trends.remove(t2)
                 trends.remove(t3)
-                trends.insert(i, t2 + t3)
+                trends.insert(i + 1, t2 + t3)
                 i = max(i - 2, 0)
                 continue
 
@@ -226,21 +270,30 @@ class Chart:
 
         self.trends = trends
 
-    def get_ticks_separated_by_trend(self) -> tuple[list[Trend], list[Trend]]:
-        uptrends = []
-        downtrends = []
+    def has_signal(self, only_new=False):
+        self._construct_segments()
 
-        for t in self.trends:
-            if t.change > 0:
-                uptrends.append(t)
-            else:
-                downtrends.append(t)
+        if len(self.trends) < max(map(len, PATTERNS)):
+            return False
 
-        return uptrends, downtrends
+        for pattern in PATTERNS:
+            last_trends = [self.trends[i] for i in range(-len(pattern), 0)]
 
-    def has_signal(self):
-        pass
+            if all([
+                p.match(t, self.ticks)
+                for p, t in zip(pattern, last_trends)
+            ]):
+                if only_new:
+                    first_timestamp = self.ticks[last_trends[0].beginning].timestamp
 
+                    if first_timestamp < self.signal_end_timestamp:
+                        return False
+
+                    self.signal_end_timestamp = self.ticks[last_trends[-1].end].timestamp
+
+                return True
+
+        return False
 
 @dataclass
 class TimePeriodsData:

@@ -1,5 +1,6 @@
 from datetime import timedelta, timezone, datetime
 from itertools import chain
+from typing import Collection
 
 from network import Network, Token, DEX
 from extended_pool import Pool, Tick, TimePeriodsData
@@ -10,6 +11,7 @@ from api.dex_screener_api import DEXScreenerAPI
 import settings
 
 
+_TIMEFRAME = timedelta(seconds=60)
 _NO_UPDATE = -1
 
 
@@ -75,12 +77,28 @@ class PoolsWithAPI(Pools):
         )
 
     @staticmethod
-    def _geckoterminal_candlestick_to_candlestick(c: GeckoTerminalCandlestick) -> Tick:
-        return Tick(
-            timestamp=c.timestamp,
-            price=c.close,
-            volume=c.volume,
-        )
+    def _geckoterminal_candlesticks_to_ticks(candlesticks: Collection[GeckoTerminalCandlestick]) -> list[Tick]:
+        ticks = []
+
+        for c in candlesticks:
+            if not ticks or c.timestamp > ticks[-1].timestamp + _TIMEFRAME:
+                ticks.append(
+                    Tick(
+                        timestamp=c.timestamp - _TIMEFRAME,
+                        price=c.open,
+                        volume=c.volume,
+                    )
+                )
+
+            ticks.append(
+                Tick(
+                    timestamp=c.timestamp,
+                    price=c.close,
+                    volume=c.volume,
+                )
+            )
+
+        return ticks
 
     async def update_using_api(self):
         if self._satisfy(PoolsWithAPI.APPLY_FILTER_EVERY_UPDATE):
@@ -130,14 +148,16 @@ class PoolsWithAPI(Pools):
         pools_for_chart_update = [t[0] for t in priority_list[:self.geckoterminal_api.get_requests_left()]]
 
         for pool in pools_for_chart_update:
-            pool.chart.update([
-                self._geckoterminal_candlestick_to_candlestick(c) for c in await self.geckoterminal_api.get_ohlcv(
-                    settings.NETWORK.get_id(),
-                    pool_address=pool.address,
-                    timeframe=Timeframe.Minute.ONE,
-                    currency=Currency.TOKEN,
-                )
-             ])
+            pool.chart.update(
+                self._geckoterminal_candlesticks_to_ticks([
+                    c for c in await self.geckoterminal_api.get_ohlcv(
+                        settings.NETWORK.get_id(),
+                        pool_address=pool.address,
+                        timeframe=Timeframe.Minute.ONE,
+                        currency=Currency.TOKEN,
+                    )
+                ])
+             )
             self.last_chart_update[pool] = self.update_counter
 
         self._increment_update_counter()
