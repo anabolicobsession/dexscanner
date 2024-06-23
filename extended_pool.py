@@ -3,12 +3,18 @@ from collections import deque
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from itertools import chain
+from statistics import mean
 from typing import Self, Iterable, Collection, Sequence
+
+from matplotlib import pyplot as plt
+from matplotlib.figure import Figure
+from matplotlib.ticker import MaxNLocator
 
 from network import Pool as NetworkPool, DEX
 
 
 TICK_MERGE_MAXIMUM_CHANGE = 0.05
+_TIMEFRAME = timedelta(seconds=60)
 
 
 Index = int
@@ -271,6 +277,9 @@ class Chart:
         self.trends = trends
 
     def has_signal(self, only_new=False):
+        if len(self.ticks) <= 3:
+            return False
+
         self._construct_segments()
 
         if len(self.trends) < max(map(len, PATTERNS)):
@@ -294,6 +303,110 @@ class Chart:
                 return True
 
         return False
+
+    def _get_padded_ticks(self):
+        ticks = [self.ticks[0]]
+
+        for x in self.ticks[1:]:
+            if not isinstance(x, Tick):
+                break
+
+            if x.timestamp > ticks[-1].timestamp + _TIMEFRAME:
+                last_tick = ticks[-1]
+                diff = int((x.timestamp.timestamp() - last_tick.timestamp.timestamp()) / _TIMEFRAME.total_seconds())
+
+                for i in range(1, diff):
+                    ticks.append(
+                        Tick(
+                            last_tick.timestamp + _TIMEFRAME * i,
+                            last_tick.price,
+                            0,
+                        )
+                    )
+
+            ticks.append(x)
+
+        return ticks
+
+    @staticmethod
+    def _exponential_averaging(xs, alpha, n_avg=1):
+        new_xs = [mean(xs[:n_avg])]
+
+        for x in xs[1:]:
+            new_xs.append(new_xs[-1] * (1 - alpha) + x * alpha)
+
+        return new_xs
+
+    def create_plot(self, percent=False) -> Figure:
+        if not self.trends:
+            raise ValueError('No trends constructed')
+
+        fig, ax = plt.subplots(figsize=(18, 4))
+        ax2 = ax.twinx()
+
+        average = self.ticks[0].price
+        # average = mean([x.price for x in self.ticks])
+
+        for x in self.trends:
+            trend_ticks = self.ticks[x.beginning:x.end + 1]
+            ax.plot(
+                [y.timestamp for y in trend_ticks],
+                [y.price if not percent else y.price / average * 100 for y in trend_ticks],
+                color='#00c979' if x.change > 0 else '#ff6969',
+                linewidth=2,
+                marker=None,
+            )
+
+        padded_ticks = self._get_padded_ticks()
+        ax2.plot(
+            [x.timestamp for x in padded_ticks],
+            self._exponential_averaging([x.volume for x in padded_ticks], 0.005, 100),
+            color='k',
+            linewidth=0.5,
+            alpha=0.3,
+            marker=None,
+        )
+
+        plt.margins(x=0, y=0)
+
+        plt.box(False)
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        ax.spines['bottom'].set_visible(False)
+        ax.spines['left'].set_visible(False)
+
+        ax.yaxis.set_major_formatter(lambda x, _: f'{x:.0f}%')
+        ax.tick_params(
+            bottom=False,
+            left=False,
+            labelleft=False,
+            labelright=True,
+        )
+        ax2.tick_params(
+            left=False,
+            labelleft=True,
+            right=False,
+            labelright=False,
+        )
+
+        ax.grid(
+            color='k',
+            alpha=0.2,
+            linewidth=0.5,
+        )
+
+        ax.yaxis.set_major_locator(MaxNLocator(nbins=6))
+        ax2.yaxis.set_major_locator(MaxNLocator(nbins=6))
+
+        tick_color = (0, 0, 0, 0.5)
+        ax.tick_params(colors=tick_color)
+        ax2.tick_params(colors=tick_color)
+
+        ax.set_zorder(ax2.get_zorder() + 1)
+        ax.patch.set_visible(False)
+
+        return fig
+
 
 @dataclass
 class TimePeriodsData:

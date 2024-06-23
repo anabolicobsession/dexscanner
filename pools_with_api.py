@@ -86,7 +86,7 @@ class PoolsWithAPI(Pools):
                     Tick(
                         timestamp=c.timestamp - _TIMEFRAME,
                         price=c.open,
-                        volume=c.volume,
+                        volume=0,
                     )
                 )
 
