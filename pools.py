@@ -5,12 +5,15 @@ from network import Pool, Token, DEX
 
 T = TypeVar('T')
 
-class SetWithGet(Generic[T], set):
+class SetWithGet(set, Generic[T]):
     def get(self, element: T, default: T = None) -> T | None:
         for x in self:
             if x == element:
                 return x
         return default
+
+    def __len__(self):
+        return len(super())
 
 
 Filter = Callable[[Pool], bool]
@@ -40,11 +43,11 @@ class Pools:
     def __iter__(self):
         return iter(self.pools)
 
-    def get_tokens(self) -> Tokens:
-        return self.tokens
+    def get_tokens(self) -> list[DEX]:
+        return [x for x in self.tokens]
 
-    def get_dexes(self) -> DEXes:
-        return self.dexes
+    def get_dexes(self) -> list[DEX]:
+        return [x for x in self.dexes]
 
     def _ensure_consistent_token_and_dex_references(self, pool: Pool):
         if x := self.tokens.get(pool.base_token):

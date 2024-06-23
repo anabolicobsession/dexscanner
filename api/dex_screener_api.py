@@ -46,15 +46,15 @@ class Pool(BaseModel):
 
     price_usd: float = Field(..., alias='priceUsd')
     price_native: float = Field(..., alias='priceNative')
-    liquidity: Liquidity = Field(...)
-    fdv: float = Field(...)
+    liquidity: Liquidity = None
+    fdv: float = None
 
     price_change: TimePeriodsData = Field(..., alias="priceChange")
     volume: TimePeriodsData = Field(..., alias="volume")
     transactions: TimePeriodsTransactionCounts = Field(..., alias="txns")
 
     dex_id: str = Field(..., alias='dexId')
-    creation_date: AwareDatetime = Field(..., alias='pairCreatedAt')
+    creation_date: AwareDatetime = Field(alias='pairCreatedAt')
     url: str = Field(...)
 
 

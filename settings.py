@@ -12,7 +12,7 @@ PRODUCTION_BOT = PRODUCTION_MODE & PRODUCTION_BOT
 DATABASE_NAME_MUTELISTS = 'mutelists' if PRODUCTION_BOT else '_mutelists'
 DATABASE_NAME_USERS = 'users' if PRODUCTION_BOT else '_users'
 
-UPDATES_COOLDOWN = timedelta(minutes=1).total_seconds() if PRODUCTION_MODE else timedelta(seconds=6).total_seconds()
+UPDATES_COOLDOWN = timedelta(minutes=1).total_seconds() if PRODUCTION_MODE else timedelta(seconds=60).total_seconds()
 NOTIFICATION_PUMP_COOLDOWN = timedelta(minutes=30) if PRODUCTION_MODE else timedelta()
 GECKO_TERMINAL_MAX_REQUESTS_PER_CYCLE = 30 if PRODUCTION_MODE else 3
 
@@ -20,8 +20,8 @@ POOL_DEFAULT_FILTER = (
     lambda p:
     p.quote_token.is_native_currency() and
     p.volume > 10_000 and
-    p.liquidity > 5_000 and
-    p.makers > 50
+    p.liquidity > 5_000
+    # p.makers > 50
 )
 
 PUMP_MIN_SCORE = 8

@@ -11,15 +11,13 @@ from telegram import error, Bot, Update, Message, LinkPreviewOptions, InlineKeyb
 from telegram.constants import ParseMode
 from telegram.ext import ApplicationBuilder, ContextTypes, Defaults, CallbackQueryHandler
 from aiogram import html
-from pytonapi import AsyncTonapi
 
 import network
 import settings
 from pools_with_api import PoolsWithAPI
-from network import Pool
-from pools import Pools
+from extended_pool import Pool
 from users import UserId, Users
-from utils import format_number, round_to_significant_figures, clear_from_html, difference_to_pretty_str
+from utils import format_number, clear_from_html, difference_to_pretty_str
 
 root_logger = logging.getLogger()
 root_logger.setLevel(level=settings.LOGGING_LEVEL)
@@ -55,10 +53,9 @@ class Status(Enum):
 
 def pools_to_message(
         pools: Iterable[Pool],
+        signal: str,
         prefix: str | tuple[str, str] | None = None,
         postfix: str | tuple[str, str] | None = None,
-        balance=None,
-        change=None,
         line_width=settings.TELEGRAM_MESSAGE_MAX_WIDTH,
         message_max_length=settings.TELEGRAM_MESSAGE_MAX_LEN,
 ):
@@ -92,27 +89,28 @@ def pools_to_message(
 
         add_line(
             pool.base_token.ticker if pool.quote_token.is_native_currency() else pool.base_token.ticker + '/' + pool.quote_token.ticker,
-            format_number(pool.price, 4, 9, symbol='$', significant_figures=2)
+            # format_number(pool.price_native, 4, 9, symbol='$', significant_figures=2),
+            signal,
         )
 
         left = 3
 
-        m5 = format_number(pool.price_change.m5, left, sign=True, percent=True, significant_figures=2)
-        h1 = format_number(pool.price_change.h1, left, sign=True, percent=True, significant_figures=2)
-        h6 = format_number(pool.price_change.h6, left, sign=True, percent=True, significant_figures=2)
-        add_line('Price:', f'{m5} {h1} {h6}')
+        # m5 = format_number(pool.price_change.m5, left, sign=True, percent=True, significant_figures=2)
+        # h1 = format_number(pool.price_change.h1, left, sign=True, percent=True, significant_figures=2)
+        # h6 = format_number(pool.price_change.h6, left, sign=True, percent=True, significant_figures=2)
+        # add_line('Price:', f'{m5} {h1} {h6}')
 
-        for name, timedata in [('Buyers/Sellers:', pool.buyers_sellers_ratio), ('Volume ratio:', pool.volume_ratio)]:
-            m5 = format_number(round(timedata.m5, 1),  left, 1)
-            h1 = format_number(round(timedata.h1, 1), left, 1)
-            h6 = format_number(round(timedata.h6 if name != 'Buyers/Sellers:' else timedata.h24, 1),  left, 1)
-            add_line(name, f'{m5} {h1} {h6}')
+        # for name, timedata in [('Buyers/Sellers:', pool.buyers_sellers_ratio), ('Volume ratio:', pool.volume_ratio)]:
+        #     m5 = format_number(round(timedata.m5, 1),  left, 1)
+        #     h1 = format_number(round(timedata.h1, 1), left, 1)
+        #     h6 = format_number(round(timedata.h6 if name != 'Buyers/Sellers:' else timedata.h24, 1),  left, 1)
+        #     add_line(name, f'{m5} {h1} {h6}')
 
-        add_line('Liquidity:', format_number(pool.liquidity, 6, symbol='$', k_mode=True))
+        if pool.liquidity: add_line('Liquidity:', format_number(pool.liquidity, 6, symbol='$', k_mode=True))
         add_line('Volume:', format_number(pool.volume, 6, symbol='$', k_mode=True))
-        add_line('Makers:', str(round_to_significant_figures(pool.makers, 2)))
-        add_line('TXNs/Makers:', format_number(round(pool.transactions / pool.makers, 1), 3, 1))
-        add_line('Age:', difference_to_pretty_str(pool.creation_date))
+        # add_line('Makers:', str(round_to_significant_figures(pool.makers, 2)))
+        # add_line('TXNs/Makers:', format_number(round(pool.transactions / pool.makers, 1), 3, 1))
+        if pool.creation_date: add_line('Age:', difference_to_pretty_str(pool.creation_date))
 
         link_gecko = html.link('GeckoTerminal', f'https://www.geckoterminal.com/{settings.NETWORK.get_id()}/pools/{pool.address}')
         link_dex = html.link('DEX Screener', f'https://dexscreener.com/{settings.NETWORK.get_id()}/{pool.address}')
@@ -131,10 +129,11 @@ def pools_to_message(
 class TONSonar:
     def __init__(self):
         self.bot: Bot | None = None
-        self.pools = Pools(pool_filter=settings.POOL_DEFAULT_FILTER, repeated_pool_filter_key=lambda p: p.volume)
+        self.pools = PoolsWithAPI(
+            pool_filter=settings.POOL_DEFAULT_FILTER,
+            repeated_pool_filter_key=lambda x: x.volume,
+        )
         self.users: Users = Users()
-        self.geckoterminal_api = PoolsWithAPI(max_requests=settings.GECKO_TERMINAL_MAX_REQUESTS_PER_CYCLE)
-        self.ton_api = AsyncTonapi(api_key=os.environ.get('TON_API_KEY'))
 
         self.reply_markup_mute = InlineKeyboardMarkup([[
             InlineKeyboardButton('1 day', callback_data='1'),
@@ -165,42 +164,49 @@ class TONSonar:
             except CancelledError as e:
                 logger.info(f'Stopping the bot{" - " + str(e) if str(e) else str(e)}')
                 await self.safely_end_all_processes()
-            except Exception as e:
-                logging.warning(e)
-                await self.safely_end_all_processes()
 
             await application.updater.stop()
             await application.stop()
 
     async def safely_end_all_processes(self):
         self.users.close_connection()
-        await self.geckoterminal_api.close_api_sessions()
+        await self.pools.close_api_sessions()
 
     async def run_one_cycle(self):
         start_time = time.time()
 
         logger.info('Updating pools')
-        await self.geckoterminal_api.update_pools(self.pools)
-        logger.info(f'Pools: {len(self.pools)}, Tokens: {len(self.pools.get_tokens())}')
+        await self.pools.update_using_api()
+        logger.info(f'Pools: {len(self.pools)}')
 
-        await self.send_pump_notification()
-        await self.bot.set_my_short_description(f'Last update: {datetime.now().strftime("%I:%M %p")}')
+        # await self.send_signal_messages()
+        # await self.bot.set_my_short_description(f'Last update: {datetime.now().strftime("%I:%M %p")}')
 
         cooldown = settings.UPDATES_COOLDOWN - (time.time() - start_time)
         if cooldown > 0:
             logger.info(f'Going to asynchronous sleep - {cooldown:.0f}s')
             await asyncio.sleep(cooldown)
 
-    async def send_pump_notification(self):
-        pumped_pools = [p for p in self.pools if settings.should_be_notified(p)]
-        pumped_pools.sort(key=settings.calculate_change_score, reverse=True)
-        logger.info(f'Sending pump notification - Pumped pools: {len(pumped_pools)}')
+    async def send_signal_messages(self):
+        logger.info(f'Checking for signals')
+        tuples = []
+
+        for p in self.pools:
+            if x := p.chart.get_signal(only_new=True):
+                tuples.append((p, *x))
+
+        if not tuples:
+            return
+        tuples.sort(key=lambda x: x[2], reverse=True)
 
         for user_id in self.users.get_user_ids():
-            for i, pool in enumerate(pumped_pools):
+            for pool, signal, magnitude in tuples:
+
                 if not self.users.is_muted(user_id, pool.base_token):
-                    self.users.mute_for(user_id, pool.base_token, settings.NOTIFICATION_PUMP_COOLDOWN)
-                    _, status = await self.send_message(pools_to_message([pool]), user_id, reply_markup=self.reply_markup_mute)
+                    # self.users.mute_for(user_id, pool.base_token, settings.NOTIFICATION_PUMP_COOLDOWN)
+
+                    message = pools_to_message([pool], repr(signal) + f' {magnitude:.0f}%')
+                    _, status = await self.send_message(message, user_id, reply_markup=self.reply_markup_mute)
                     if status is Status.BLOCK:
                         break
 

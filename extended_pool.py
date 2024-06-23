@@ -1,12 +1,15 @@
 from abc import ABC
 from collections import deque
+from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from enum import Enum
 from itertools import chain
 from statistics import mean
 from typing import Self, Iterable, Collection, Sequence
 
 from matplotlib import pyplot as plt
+from matplotlib.dates import DateFormatter
 from matplotlib.figure import Figure
 from matplotlib.ticker import MaxNLocator
 
@@ -192,27 +195,39 @@ def _fraction(percent):
     return percent / 100
 
 
-_UPTREND = [
-    Pattern(_fraction(5), min_duration=timedelta(minutes=20)),
-]
+class Signal(Enum):
 
-_DUMP = [
-    Pattern(_fraction(-5),  max_duration=timedelta(minutes=10)),
-]
+    UPTREND = [
+        Pattern(_fraction(5), min_duration=timedelta(minutes=20)),
+    ]
 
-_DOWNTREND_REVERSAL = [
-    Pattern(_fraction(-10), min_duration=timedelta(minutes=20)),
-    Pattern(_fraction(3)),
-]
+    DUMP = [
+        Pattern(_fraction(-5),  max_duration=timedelta(minutes=10)),
+    ]
 
-PATTERNS = [_DUMP, _UPTREND, _DOWNTREND_REVERSAL]
+    DOWNTREND_REVERSAL = [
+        Pattern(_fraction(-10), min_duration=timedelta(minutes=20)),
+        Pattern(_fraction(3)),
+    ]
+
+    def __len__(self):
+        return len(self.value)
+
+    def __repr__(self):
+        return ' '.join([x.title() for x in self.name.split('_')])
+
+    def get_pattern(self):
+        return self.value
+
+
+Magnitude = float
 
 
 class Chart:
     def __init__(self):
         self.ticks: CircularList[BaseTick] = CircularList(capacity=CHART_MAX_TICKS)
-        self.trends: deque[Trend] | None = None
         self.signal_end_timestamp: datetime | None = None
+        self.figure: Figure | None = None
 
     def __repr__(self):
         return f'{type(self).__name__}({[repr(t) for t in self.ticks]})'
@@ -225,16 +240,17 @@ class Chart:
             self.ticks.set(
                 next(
                     (
-                        i for i in range(len(self.ticks))
-                        if ticks[0].timestamp >= self.ticks[i].timestamp
+                        i for i in range(len(self.ticks) - 1, -1, -1)
+                        if self.ticks[i].timestamp == ticks[0].timestamp
                     ),
                     len(self.ticks)
                 ),
                 ticks
             )
 
-    def _construct_segments(self):
-        prices = [c.price for c in self.ticks]
+    @staticmethod
+    def _construct_segments(ticks):
+        prices = [c.price for c in ticks]
         previous_prices = [0, *prices[:-1]]
 
         changes = [
@@ -274,42 +290,42 @@ class Chart:
 
             i += 1
 
-        self.trends = trends
+        return trends
 
-    def has_signal(self, only_new=False):
+    def get_signal(self, only_new=False) -> tuple[Signal, Magnitude] | None:
         if len(self.ticks) <= 3:
-            return False
+            return None
 
-        self._construct_segments()
+        trends = self._construct_segments(self.ticks)
 
-        if len(self.trends) < max(map(len, PATTERNS)):
-            return False
+        if len(trends) < max(map(len, Signal)):
+            return None
 
-        for pattern in PATTERNS:
-            last_trends = [self.trends[i] for i in range(-len(pattern), 0)]
+        for signal in Signal:
+            last_trends = [trends[i] for i in range(-len(signal), 0)]
 
             if all([
                 p.match(t, self.ticks)
-                for p, t in zip(pattern, last_trends)
+                for p, t in zip(signal.get_pattern(), last_trends)
             ]):
                 if only_new:
                     first_timestamp = self.ticks[last_trends[0].beginning].timestamp
 
                     if first_timestamp < self.signal_end_timestamp:
-                        return False
+                        return None
 
                     self.signal_end_timestamp = self.ticks[last_trends[-1].end].timestamp
 
-                return True
+                return signal, max([abs(x.change) for x in last_trends])
 
-        return False
+        return None
 
     def _get_padded_ticks(self):
         ticks = [self.ticks[0]]
 
         for x in self.ticks[1:]:
-            if not isinstance(x, Tick):
-                break
+            if isinstance(x, IncompleteTick):
+                x = Tick(x.timestamp, x.price, 0)
 
             if x.timestamp > ticks[-1].timestamp + _TIMEFRAME:
                 last_tick = ticks[-1]
@@ -321,6 +337,11 @@ class Chart:
                             last_tick.timestamp + _TIMEFRAME * i,
                             last_tick.price,
                             0,
+                        )
+                        if isinstance(last_tick, Tick) else
+                        IncompleteTick(
+                            last_tick.timestamp + _TIMEFRAME * i,
+                            last_tick.price,
                         )
                     )
 
@@ -337,35 +358,63 @@ class Chart:
 
         return new_xs
 
-    def create_plot(self, percent=False) -> Figure:
-        if not self.trends:
-            raise ValueError('No trends constructed')
+    def _get_mapped_index(self, index, ticks):
+        timestamp = self.ticks[index].timestamp
+        return next(i for i, x in enumerate(ticks) if x.timestamp == timestamp)
 
-        fig, ax = plt.subplots(figsize=(18, 4))
+    def create_plot(
+            self,
+            width=12,
+            ratio=0.25,
+
+            percent=False,
+            tick_limit=None,
+            datetime_format='%d %H:%M',
+
+            volume_width=0.5,
+            volume_opacity=0.3,
+            grid_opacity=0.2,
+
+            tick_size=10,
+            tick_opacity=0.6,
+            xtick_bins=None,
+            ytick_bins=6,
+    ) -> Figure:
+
+        ticks = self._get_padded_ticks()
+        if tick_limit:
+            ticks = ticks[-tick_limit:]
+        trends = self._construct_segments(ticks)
+
+        fig, ax = plt.subplots(figsize=(width, width * ratio))
         ax2 = ax.twinx()
 
-        average = self.ticks[0].price
-        # average = mean([x.price for x in self.ticks])
+        for x in trends:
+            trend_ticks = ticks[x.beginning:x.end + 1]
 
-        for x in self.trends:
-            trend_ticks = self.ticks[x.beginning:x.end + 1]
             ax.plot(
                 [y.timestamp for y in trend_ticks],
-                [y.price if not percent else y.price / average * 100 for y in trend_ticks],
+                [y.price if not percent else y.price / ticks[0].price * 100 for y in trend_ticks],
                 color='#00c979' if x.change > 0 else '#ff6969',
                 linewidth=2,
                 marker=None,
             )
 
-        padded_ticks = self._get_padded_ticks()
-        ax2.plot(
-            [x.timestamp for x in padded_ticks],
-            self._exponential_averaging([x.volume for x in padded_ticks], 0.005, 100),
-            color='k',
-            linewidth=0.5,
-            alpha=0.3,
-            marker=None,
-        )
+        volume_ticks = []
+        for x in ticks:
+            if isinstance(x, IncompleteTick):
+                break
+            volume_ticks.append(x)
+
+        if volume_ticks:
+            ax2.plot(
+                [x.timestamp for x in volume_ticks],
+                self._exponential_averaging([x.volume for x in volume_ticks], 0.005, 100),
+                color='k',
+                linewidth=volume_width,
+                alpha=volume_opacity,
+                marker=None,
+            )
 
         plt.margins(x=0, y=0)
 
@@ -375,7 +424,14 @@ class Chart:
         ax.spines['bottom'].set_visible(False)
         ax.spines['left'].set_visible(False)
 
-        ax.yaxis.set_major_formatter(lambda x, _: f'{x:.0f}%')
+        ax.tick_params(axis='both', labelsize=tick_size)
+        ax2.tick_params(axis='y', labelsize=tick_size)
+
+        ax.xaxis.set_major_formatter(DateFormatter(datetime_format))
+        if percent:
+            ax.yaxis.set_major_formatter(lambda x, _: f'{x:.0f}%')
+        ax2.yaxis.set_major_formatter(lambda x, _: f'${x:.0f}')
+
         ax.tick_params(
             bottom=False,
             left=False,
@@ -391,22 +447,26 @@ class Chart:
 
         ax.grid(
             color='k',
-            alpha=0.2,
+            alpha=grid_opacity,
             linewidth=0.5,
         )
 
-        ax.yaxis.set_major_locator(MaxNLocator(nbins=6))
-        ax2.yaxis.set_major_locator(MaxNLocator(nbins=6))
+        if xtick_bins: ax.xaxis.set_major_locator(MaxNLocator(nbins=xtick_bins))
+        if ytick_bins: ax.yaxis.set_major_locator(MaxNLocator(nbins=ytick_bins))
+        if ytick_bins: ax2.yaxis.set_major_locator(MaxNLocator(nbins=ytick_bins))
 
-        tick_color = (0, 0, 0, 0.5)
-        ax.tick_params(colors=tick_color)
-        ax2.tick_params(colors=tick_color)
+        ax.tick_params(colors=(0, 0, 0, tick_opacity))
+        ax2.tick_params(colors=(0, 0, 0, tick_opacity))
 
         ax.set_zorder(ax2.get_zorder() + 1)
         ax.patch.set_visible(False)
 
+        self.figure = fig
         return fig
 
+    def clear_plot(self):
+        if self.figure:
+            plt.close(self.figure)
 
 @dataclass
 class TimePeriodsData:
@@ -420,13 +480,14 @@ class TimePeriodsData:
 class Pool(NetworkPool):
     price_usd: float
     price_native: float
-    liquidity: float
     volume: float
-    fdv: float
 
     price_change: TimePeriodsData
     dex: DEX
-    creation_date: datetime
+
+    liquidity: float = None
+    fdv: float = None
+    creation_date: datetime = None
 
     chart: Chart = Chart()
 

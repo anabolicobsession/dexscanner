@@ -85,7 +85,7 @@ class BaseAPI(ABC):
 
     def __init__(self, base_url, request_limit: int = None, cooldown: Cooldown | None = None):
         self.base_url = base_url
-        self.session = ClientSession(raise_for_status=True)
+        self.session = None
         self.cooldown = cooldown
 
         self.request_counter = None
@@ -108,6 +108,9 @@ class BaseAPI(ABC):
         return BaseAPI.URL_PATH_SEPARATOR.join([self.base_url, *path_segments])
 
     async def _get(self, *url_path_segments, **params) -> Response:
+        if not self.session:
+            self.session = ClientSession(raise_for_status=True)
+
         while True:
             try:
                 response = await self.session.get(self._form_url(*url_path_segments), **params, headers=BaseAPI.HEADERS)

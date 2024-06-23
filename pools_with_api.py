@@ -2,12 +2,13 @@ from datetime import timedelta, timezone, datetime
 from itertools import chain
 from typing import Collection
 
+from api.base_api import Cooldown
 from network import Network, Token, DEX
-from extended_pool import Pool, Tick, TimePeriodsData
+from extended_pool import Pool, Tick, TimePeriodsData, IncompleteTick
 from pools import Pools
-from api.geckoterminal_api import GeckoTerminalAPI, PoolSource, SortBy, Pool as DEXScreenerPool, Timeframe, Currency, \
+from api.geckoterminal_api import GeckoTerminalAPI, PoolSource, SortBy, Timeframe, Currency, \
     Candlestick as GeckoTerminalCandlestick
-from api.dex_screener_api import DEXScreenerAPI
+from api.dex_screener_api import DEXScreenerAPI, Pool as DEXScreenerPool
 import settings
 
 
@@ -27,8 +28,8 @@ class PoolsWithAPI(Pools):
 
     def __init__(self, **params):
         super().__init__(**params)
-        self.geckoterminal_api = GeckoTerminalAPI()
-        self.dex_screener_api = DEXScreenerAPI()
+        self.geckoterminal_api = GeckoTerminalAPI(cooldown=Cooldown(timedelta(seconds=10), 1.2))
+        self.dex_screener_api = DEXScreenerAPI(cooldown=Cooldown(timedelta(seconds=10), 1.2))
         self.update_counter = 0
         self.last_chart_update: dict[Pool, int] = {}
         
@@ -48,13 +49,13 @@ class PoolsWithAPI(Pools):
             network=Network.from_id(p.network_id),
             address=p.address,
             base_token=Token(
-                network=Network.from_id(p.network),
+                network=Network.from_id(p.network_id),
                 address=p.base_token.address,
                 ticker=p.base_token.ticker,
                 name=p.base_token.name,
             ),
             quote_token=Token(
-                network=Network.from_id(p.network),
+                network=Network.from_id(p.network_id),
                 address=p.quote_token.address,
                 ticker=p.quote_token.ticker,
                 name=p.quote_token.name,
@@ -104,11 +105,11 @@ class PoolsWithAPI(Pools):
         if self._satisfy(PoolsWithAPI.APPLY_FILTER_EVERY_UPDATE):
             self.apply_filter()
 
-        new_addresses = []
+        new_pools = []
         if self._satisfy(PoolsWithAPI.CHECK_FOR_NEW_TOKENS_EVERY_UPDATE):
 
             for source in (PoolSource.TOP, PoolSource.TRENDING):
-                new_addresses.extend(await self.geckoterminal_api.get_pools(
+                new_pools.extend(await self.geckoterminal_api.get_pools(
                     settings.NETWORK.get_id(),
                     pool_source=source,
                     pages=GeckoTerminalAPI.ALL_PAGES,
@@ -121,7 +122,12 @@ class PoolsWithAPI(Pools):
             microseconds=timestamp.microsecond,
         )
 
+
+        new_addresses = [x.address for x in new_pools]
         all_addresses = list(set([p.address for p in self]) | set(new_addresses))
+
+        print(2)
+
         self.update(
             list(chain(*[
                 map(
@@ -132,9 +138,11 @@ class PoolsWithAPI(Pools):
             ]))
         )
 
+        print(3)
+
         # add the latest price to the chart, because GeckoTerminal (OHLCV) requests have quota
         for p in self:
-            p.chart.update(Tick(rounded_timestamp, p.price_native))
+            p.chart.update(IncompleteTick(rounded_timestamp, p.price_native))
 
         # update OHLCV of the most perspective pools (double-level sorting is used)
         priority_list = [
@@ -146,6 +154,8 @@ class PoolsWithAPI(Pools):
         ]
         priority_list.sort(key=lambda t: (t[1], -t[2]))
         pools_for_chart_update = [t[0] for t in priority_list[:self.geckoterminal_api.get_requests_left()]]
+
+        print(4)
 
         for pool in pools_for_chart_update:
             pool.chart.update(
