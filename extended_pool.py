@@ -339,12 +339,12 @@ class Chart:
 
                     if self.signal_end_timestamp and first_timestamp < self.signal_end_timestamp:
                         print(f'{pool.base_token.ticker} DENIED\n'
-                              f'Old signal end: {self.signal_end_timestamp.strftime("%H:%M")}\n'
+                              f'Old signal end: {self.signal_end_timestamp.strftime("%H:%M") if self.signal_end_timestamp else "None"}\n'
                               f'New signal - {first_timestamp.strftime("%H:%M")} - {self.ticks[last_trends[-1].end].timestamp.strftime("%H:%M")}')
                         return None
                     else:
                         print(f'{pool.base_token.ticker} ACCEPTED\n'
-                              f'Old signal end: {self.signal_end_timestamp.strftime("%H:%M")}\n'
+                              f'Old signal end: {self.signal_end_timestamp.strftime("%H:%M") if self.signal_end_timestamp else "None"}\n'
                               f'New signal - {first_timestamp.strftime("%H:%M")} - {self.ticks[last_trends[-1].end].timestamp.strftime("%H:%M")}')
 
                     self.signal_end_timestamp = self.ticks[last_trends[-1].end].timestamp
