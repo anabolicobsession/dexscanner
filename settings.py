@@ -12,7 +12,7 @@ PRODUCTION_BOT = PRODUCTION_MODE & PRODUCTION_BOT
 DATABASE_NAME_MUTELISTS = 'mutelists' if PRODUCTION_BOT else '_mutelists'
 DATABASE_NAME_USERS = 'users' if PRODUCTION_BOT else '_users'
 
-UPDATES_COOLDOWN = timedelta(minutes=1).total_seconds()
+UPDATES_COOLDOWN = timedelta(seconds=65).total_seconds()
 NOTIFICATION_PUMP_COOLDOWN = timedelta(minutes=30) if PRODUCTION_MODE else timedelta()
 GECKO_TERMINAL_MAX_REQUESTS_PER_CYCLE = 30 if PRODUCTION_MODE else 3
 
