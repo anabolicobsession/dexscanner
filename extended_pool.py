@@ -17,7 +17,7 @@ import settings
 from network import Pool as NetworkPool, DEX
 
 
-TICK_MERGE_MAXIMUM_CHANGE = 0.05
+TICK_MERGE_MAXIMUM_CHANGE = 0.1
 DURATION_TO_MERGE = timedelta(minutes=5)
 _TIMEFRAME = timedelta(seconds=60)
 
@@ -225,7 +225,7 @@ class Signal(Enum):
     ]
 
     DUMP = [
-        Pattern(_fraction(-10),  max_duration=timedelta(minutes=10)),
+        Pattern(_fraction(-10),  max_duration=timedelta(minutes=20)),
     ]
 
     DOWNTREND_REVERSAL = [
@@ -262,9 +262,6 @@ class Chart:
             ticks = [ticks]
 
         if ticks:
-            # if len(ticks) > 1:
-            #     print(f'Chart ticks are being updated: {len(self.ticks)} -> +{len(ticks)}')
-
             for i in range(len(self.ticks)):
                 for j in range(len(ticks)):
                     if self.ticks[i].timestamp == ticks[j].timestamp:
@@ -276,20 +273,6 @@ class Chart:
 
             self.ticks.pop_all()
             self.ticks.extend(ticks)
-
-            # self.ticks.set(
-            #     next(
-            #         (
-            #             i for i in range(len(self.ticks) - 1, -1, -1)
-            #             if self.ticks[i].timestamp == ticks[0].timestamp
-            #         ),
-            #         len(self.ticks)
-            #     ),
-            #     ticks
-            # )
-            #
-            # if len(ticks) > 1:
-            #     print(f'Result: {len(self.ticks)}')
 
     @staticmethod
     def _construct_segments(ticks):
@@ -357,10 +340,10 @@ class Chart:
                     print(f'Old signal end: {self.signal_end_timestamp} - New signal - {first_timestamp}--{self.ticks[last_trends[-1].end].timestamp}')
 
                     if self.signal_end_timestamp and first_timestamp < self.signal_end_timestamp:
-                        print('Signal not accepted')
+                        print(f'Old signal end: {self.signal_end_timestamp} NO New signal - {first_timestamp}--{self.ticks[last_trends[-1].end].timestamp}')
                         return None
-
-                    print('Signal accepted')
+                    else:
+                        print(f'Old signal end: {self.signal_end_timestamp} -> New signal - {first_timestamp}--{self.ticks[last_trends[-1].end].timestamp}')
 
                     self.signal_end_timestamp = self.ticks[last_trends[-1].end].timestamp
 

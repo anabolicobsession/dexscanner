@@ -15,6 +15,7 @@ import settings
 
 _TIMEFRAME = timedelta(seconds=60)
 _NO_UPDATE = -1
+COOLDOWN = 10
 
 
 logger = logging.getLogger(__name__)
@@ -32,8 +33,8 @@ class PoolsWithAPI(Pools):
 
     def __init__(self, **params):
         super().__init__(**params)
-        self.geckoterminal_api = GeckoTerminalAPI(cooldown=Cooldown(timedelta(seconds=5), 2))
-        self.dex_screener_api = DEXScreenerAPI(cooldown=Cooldown(timedelta(seconds=5), 2))
+        self.geckoterminal_api = GeckoTerminalAPI(cooldown=Cooldown(timedelta(seconds=COOLDOWN), 1.5))
+        self.dex_screener_api = DEXScreenerAPI(cooldown=Cooldown(timedelta(seconds=COOLDOWN), 1.5))
         self.update_counter = 0
         self.last_chart_update: dict[Pool, int] = {}
         

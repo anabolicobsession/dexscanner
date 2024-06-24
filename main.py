@@ -189,10 +189,8 @@ class TONSonar:
         await self.send_signal_messages()
         await self.bot.set_my_short_description(f'Last update: {datetime.now().strftime("%I:%M %p")}')
 
-        cooldown = settings.UPDATES_COOLDOWN - (time.time() - start_time)
-        if cooldown > 0:
-            logger.debug(f'Going to asynchronous sleep - {cooldown:.0f}s')
-            await asyncio.sleep(cooldown)
+        logger.debug(f'Going to asynchronous sleep - {settings.UPDATES_COOLDOWN:.0f}s')
+        await asyncio.sleep(settings.UPDATES_COOLDOWN)
 
     async def send_signal_messages(self):
         logger.debug(f'Checking for signals')
