@@ -305,7 +305,7 @@ class TONSonar:
         user_id = query.message.chat.id
 
         if option:
-            token_address = query.message.text.rsplit('\n', 1)[-1]
+            token_address = query.message.caption.rsplit('\n', 1)[-1]
             matches = [t for t in self.pools.get_tokens() if t.address == token_address]
 
             if matches:
@@ -314,7 +314,7 @@ class TONSonar:
                 token = None
                 logger.warning(f'Can\'t find token by address: {token_address}')
         else:
-            token = self._parse_token(query.message.text.split(' ', 3)[2])
+            token = self._parse_token(query.message.caption.split(' ', 3)[2])
 
         await query.answer()
 
@@ -329,10 +329,10 @@ class TONSonar:
                 self.users.mute_forever(user_id, token)
 
             duration = f'for {option} day{"" if option == 1 else "s"}' if option > 0 else 'forever'
-            await query.edit_message_text(text=f'Successfully muted {token.ticker} {duration}', reply_markup=self.reply_markup_unmute)
+            await query.edit_message_caption(caption=f'Successfully muted {token.ticker} {duration}', reply_markup=self.reply_markup_unmute)
         else:
             self.users.unmute(user_id, token)
-            await query.edit_message_text(text=f'{token.ticker} was unmuted')
+            await query.edit_message_caption(caption=   f'{token.ticker} was unmuted')
 
 
 if __name__ == '__main__':
