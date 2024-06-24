@@ -221,7 +221,7 @@ def _fraction(percent):
 class Signal(Enum):
 
     UPTREND = [
-        Pattern(_fraction(10), min_duration=timedelta(minutes=30)),
+        Pattern(_fraction(10), min_duration=timedelta(minutes=120)),
     ]
 
     DUMP = [
