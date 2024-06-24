@@ -81,7 +81,8 @@ class Pools:
                 existing_pool = None
 
                 for p in self.pools:
-                    if p.base_token == pool.base_token and p.quote_token == pool.quote_token:
+                    # if it's not literally the same pool, but a pool with same tokens, but different DEX
+                    if p != pool and p.base_token == pool.base_token and p.quote_token == pool.quote_token:
                         existing_pool = p
                         break
 

@@ -341,14 +341,12 @@ class Chart:
                         return None
                     else:
                         old = self.signal_end_timestamp.strftime("%H:%M") if self.signal_end_timestamp else "None"
-                        print(f'{pool.base_token.ticker} {signal}\n'
-                              f'{old} -> {first_timestamp.strftime("%H:%M")} - {self.ticks[last_trends[-1].end].timestamp.strftime("%H:%M")}'
-                              )
+                        print(f'{pool.base_token.ticker} {signal.name} {old} -> {first_timestamp.strftime("%H:%M")} - {self.ticks[last_trends[-1].end].timestamp.strftime("%H:%M")}')
 
                     self.signal_end_timestamp = self.ticks[last_trends[-1].end].timestamp
+                    print(f'Set new timestamp value to {self.signal_end_timestamp.strftime("%H:%M")} - ID/Hash: {id(self)}/{hash(self)}')
 
                 magnitude = max([abs(x.change) for x in last_trends])
-                # print(f'Match all! {signal}/{magnitude} - {last_trends}')
 
                 return signal, magnitude
 

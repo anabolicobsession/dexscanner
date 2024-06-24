@@ -190,6 +190,7 @@ class TONSonar:
         await self.bot.set_my_short_description(f'Last update: {datetime.now().strftime("%I:%M %p")}')
 
         logger.debug(f'Going to asynchronous sleep - {settings.UPDATES_COOLDOWN:.0f}s')
+        logger.debug('\n')
         await asyncio.sleep(settings.UPDATES_COOLDOWN)
 
     async def send_signal_messages(self):
