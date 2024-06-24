@@ -1,3 +1,4 @@
+import logging
 from abc import ABC
 from collections import deque
 from copy import deepcopy
@@ -18,14 +19,15 @@ from network import Pool as NetworkPool, DEX
 
 
 TICK_MERGE_MAXIMUM_CHANGE = 0.1
-DURATION_TO_MERGE = timedelta(minutes=5)
+LAST_TREND_DURATION = timedelta(minutes=3)
+
+DURATION_TO_MERGE = timedelta(minutes=3)
 _TIMEFRAME = timedelta(seconds=60)
-
-
 Index = int
-
-
 CHART_MAX_TICKS = 2000
+
+
+logger = logging.getLogger(__name__)
 
 
 class TimeGapBetweenCharts(Exception):
@@ -198,7 +200,7 @@ class Pattern:
 
         if trend.change >= min_change >= 0 or 0 >= min_change >= trend.change:
 
-            duration = ticks[trend.end].timestamp - ticks[trend.beginning].timestamp
+            duration = abs(ticks[trend.end].timestamp - ticks[trend.beginning].timestamp)
 
             if self.min_duration and duration < self.min_duration:
                 return False
@@ -319,36 +321,53 @@ class Chart:
         return trends
 
     def get_signal(self, pool, only_new=False) -> tuple[Signal, Magnitude] | None:
-        if len(self.ticks) <= 3:
-            return None
-
         trends = self._construct_segments(self.ticks)
+
+        if len(trends) < 3:
+            return None
 
         if len(trends) < max(map(len, Signal)):
             return None
 
         for signal in Signal:
-            last_trends = [trends[i] for i in range(-len(signal), 0)]
+            trends_to_check = [[trends[i] for i in range(-len(signal), 0)]]
 
-            if all([
-                p.match(t, self.ticks, pool)
-                for p, t in zip(signal.get_pattern(), last_trends)
-            ]):
-                if only_new:
-                    first_timestamp = self.ticks[last_trends[0].beginning].timestamp
+            timestamp1 = self.ticks[trends[-1].beginning].timestamp
+            timestamp2 = self.ticks[trends[-1].end].timestamp
 
-                    if self.signal_end_timestamp and first_timestamp < self.signal_end_timestamp:
-                        return None
-                    else:
-                        old = self.signal_end_timestamp.strftime("%H:%M") if self.signal_end_timestamp else "None"
-                        print(f'{pool.base_token.ticker} {signal.name} {old} -> {first_timestamp.strftime("%H:%M")} - {self.ticks[last_trends[-1].end].timestamp.strftime("%H:%M")}')
+            if abs(timestamp1 - timestamp2) <= LAST_TREND_DURATION:
+                trends_to_check.append([trends[i] for i in range(-len(signal) - 1, -1)])
 
-                    self.signal_end_timestamp = self.ticks[last_trends[-1].end].timestamp
-                    print(f'Set new timestamp value to {self.signal_end_timestamp.strftime("%H:%M")} - ID/Hash: {id(self)}/{hash(self)}')
+            for i, last_trends in enumerate(trends_to_check):
 
-                magnitude = max([abs(x.change) for x in last_trends])
+                if all([
+                    p.match(t, self.ticks, pool)
+                    for p, t in zip(signal.get_pattern(), last_trends)
+                ]):
+                    if only_new:
+                        first_timestamp = self.ticks[last_trends[0].beginning].timestamp
 
-                return signal, magnitude
+                        if self.signal_end_timestamp and first_timestamp < self.signal_end_timestamp:
+                            return None
+                        else:
+                            old = self.signal_end_timestamp.strftime("%H:%M") if self.signal_end_timestamp else "None"
+
+                            ts = ' -> '.join([f'{x.change * 100:.0f} ({self.ticks[x.beginning].timestamp.strftime("%H:%M")}-{self.ticks[x.end].timestamp.strftime("%H:%M")})' for x in last_trends])
+
+                            logger.debug(
+                                f'{pool.base_token.ticker} '
+                                f'{signal.name} {old} -> {first_timestamp.strftime("%H:%M")} - {self.ticks[last_trends[-1].end].timestamp.strftime("%H:%M")} - '
+                                f'Trends: {ts}'
+                            )
+
+                        self.signal_end_timestamp = self.ticks[last_trends[-1].end].timestamp
+
+                    magnitude = max([abs(x.change) for x in last_trends])
+
+                    if i > 0:
+                        logger.debug(f'Last trend was excluded: {timestamp1.strftime("%H:%M")} - {timestamp2.strftime("%H:%M")}')
+
+                    return signal, magnitude
 
         return None
 
@@ -412,6 +431,10 @@ class Chart:
             xtick_bins=None,
             ytick_bins=6,
     ) -> Figure:
+
+        if self.figure:
+            plt.close(self.figure)
+            self.figure = None
 
         ticks = self._get_padded_ticks()
         if tick_limit:

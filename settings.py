@@ -9,8 +9,8 @@ PRODUCTION_MODE = True
 PRODUCTION_BOT = True
 PRODUCTION_BOT = PRODUCTION_MODE & PRODUCTION_BOT
 
-DATABASE_NAME_MUTELISTS = 'mutelists' if PRODUCTION_BOT else '_mutelists'
-DATABASE_NAME_USERS = 'users' if PRODUCTION_BOT else '_users'
+DATABASE_NAME_MUTELISTS = 'mutelists' if PRODUCTION_MODE else '_mutelists'
+DATABASE_NAME_USERS = 'users' if PRODUCTION_MODE else '_users'
 
 UPDATES_COOLDOWN = timedelta(seconds=65).total_seconds()
 NOTIFICATION_PUMP_COOLDOWN = timedelta(minutes=30) if PRODUCTION_MODE else timedelta()
@@ -33,8 +33,6 @@ CHANGE_SCORE_COEFFICIENTS = {
     'h1': 6,
     'h6': 1,
 }
-
-# TIMEFRAME =
 
 
 if PRODUCTION_MODE:
@@ -80,7 +78,7 @@ NETWORK = Network.TON
 BLACKLIST_FILENAME = 'blacklist.csv'
 
 TELEGRAM_MESSAGE_MAX_LEN = 3700
-TELEGRAM_MESSAGE_MAX_WIDTH = 34
+TELEGRAM_MESSAGE_MAX_WIDTH = 35
 
 LOGGING_LEVEL = logging.DEBUG
 LOGGING_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'

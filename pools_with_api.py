@@ -107,16 +107,14 @@ class PoolsWithAPI(Pools):
         return ticks
 
     async def update_using_api(self):
-        logger.debug('Updating pools via API. Applying filter')
-        p = next((x for x in self if x.base_token.ticker == 'WTF'), None)
-        if p: logger.debug(f'{p.base_token.ticker} chart id: {id(p.chart)}')
+        # logger.debug('Updating pools via API. Applying filter')
 
         if self._satisfy(PoolsWithAPI.APPLY_FILTER_EVERY_UPDATE):
             self.apply_filter()
 
         new_pools = []
         if self._satisfy(PoolsWithAPI.CHECK_FOR_NEW_TOKENS_EVERY_UPDATE):
-            logger.debug('Updating pool list via GeckoTerminal')
+            # logger.debug('Updating pool list via GeckoTerminal')
 
             for source in (PoolSource.TOP, PoolSource.TRENDING):
                 new_pools.extend(await self.geckoterminal_api.get_pools(
@@ -135,9 +133,7 @@ class PoolsWithAPI(Pools):
         new_addresses = [x.address for x in new_pools]
         all_addresses = list(set([p.address for p in self]) | set(new_addresses))
 
-        logger.debug('Updating pools via DEX Screener')
-        p = next((x for x in self if x.base_token.ticker == 'WTF'), None)
-        if p: logger.debug(f'{p.base_token.ticker} chart id: {id(p.chart)}')
+        # logger.debug('Updating pools via DEX Screener')
 
         self.update(
             list(chain(*[
@@ -149,9 +145,7 @@ class PoolsWithAPI(Pools):
             ]))
         )
 
-        logger.debug('Updating chart last tick from DEX Screener response')
-        p = next((x for x in self if x.base_token.ticker == 'WTF'), None)
-        if p: logger.debug(f'{p.base_token.ticker} chart id: {id(p.chart)}')
+        # logger.debug('Updating chart last tick from DEX Screener response')
 
         # add the latest price to the chart, because GeckoTerminal (OHLCV) requests have quota
         for p in self:
@@ -168,9 +162,7 @@ class PoolsWithAPI(Pools):
         priority_list.sort(key=lambda t: (t[1], -t[2]))
         pools_for_chart_update = [t[0] for t in priority_list[:self.geckoterminal_api.get_requests_left()]]
 
-        logger.debug(f'Getting OHLCV for most prominent {self.geckoterminal_api.get_requests_left()} pools')
-        p = next((x for x in self if x.base_token.ticker == 'WTF'), None)
-        if p: logger.debug(f'{p.base_token.ticker} chart id: {id(p.chart)}')
+        # logger.debug(f'Getting OHLCV for most prominent {self.geckoterminal_api.get_requests_left()} pools')
 
         for pool in pools_for_chart_update:
             candlesticks = self._geckoterminal_candlesticks_to_ticks(
@@ -184,7 +176,7 @@ class PoolsWithAPI(Pools):
             pool.chart.update(candlesticks)
             self.last_chart_update[pool] = self.update_counter
 
-        logger.debug('Finishing update')
+        # logger.debug('Finishing update')
 
         self._increment_update_counter()
         self.geckoterminal_api.reset_request_counter()

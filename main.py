@@ -35,6 +35,7 @@ logging.getLogger('httpcore').setLevel(logging.INFO)
 logging.getLogger('matplotlib').setLevel(logging.INFO)
 logging.getLogger('telegram').setLevel(logging.INFO)
 
+
 MessageID = int
 
 
@@ -91,7 +92,6 @@ def pools_to_message(
 
         add_line(
             pool.base_token.ticker if pool.quote_token.is_native_currency() else pool.base_token.ticker + '/' + pool.quote_token.ticker,
-            # format_number(pool.price_native, 4, 9, symbol='$', significant_figures=2),
             signal,
         )
 
@@ -114,11 +114,20 @@ def pools_to_message(
         # add_line('TXNs/Makers:', format_number(round(pool.transactions / pool.makers, 1), 3, 1))
         if pool.creation_date: add_line('Age:', difference_to_pretty_str(pool.creation_date))
 
-        link_gecko = html.link('GeckoTerminal', f'https://www.geckoterminal.com/{settings.NETWORK.get_id()}/pools/{pool.address}')
-        link_dex = html.link('DEX Screener', f'https://dexscreener.com/{settings.NETWORK.get_id()}/{pool.address}')
-        links = link_dex + html.code(spaces(line_width - 22)) + link_gecko
+        add_line(
+            'USD:',
+            format_number(pool.price_usd, 4, 6, symbol='$', significant_figures=2),
+        )
 
-        links += '\n' + html.code(spaces(line_width - 9)) + html.link('swap.coffee', f'https://swap.coffee/dex?ft=TON&st={pool.base_token.ticker}')
+        add_line(
+            'Native:',
+            format_number(pool.price_native, 4, 6, symbol=settings.NETWORK.name + ' ', significant_figures=2),
+        )
+
+        geckoterminal = html.link('GeckoTerminal', f'https://www.geckoterminal.com/{settings.NETWORK.get_id()}/pools/{pool.address}')
+        swap_coffee = html.link('swap.coffee', f'https://swap.coffee/dex?ft=TON&st={pool.base_token.ticker}')
+        dex_screener = html.link('DEX Screener', f'https://dexscreener.com/{settings.NETWORK.get_id()}/{pool.address}')
+        links = geckoterminal + html.code(spaces(line_width - 33)) + swap_coffee + html.code(spaces(1)) + ' ' + dex_screener
 
         new_pool_message = get_updated_message_pools(html.code('\n'.join(lines)) + '\n' + links + '\n' + html.code(pool.base_token.address))
 
