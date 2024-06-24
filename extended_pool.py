@@ -337,8 +337,6 @@ class Chart:
                 if only_new:
                     first_timestamp = self.ticks[last_trends[0].beginning].timestamp
 
-                    print(f'Old signal end: {self.signal_end_timestamp} - New signal - {first_timestamp}--{self.ticks[last_trends[-1].end].timestamp}')
-
                     if self.signal_end_timestamp and first_timestamp < self.signal_end_timestamp:
                         print(f'Old signal end: {self.signal_end_timestamp} NO New signal - {first_timestamp}--{self.ticks[last_trends[-1].end].timestamp}')
                         return None
