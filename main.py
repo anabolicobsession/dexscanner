@@ -6,6 +6,7 @@ import time
 from asyncio import CancelledError
 from datetime import timedelta, datetime
 from enum import Enum, auto
+from io import BytesIO
 
 from telegram import error, Bot, Update, Message, LinkPreviewOptions, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ParseMode
@@ -25,13 +26,14 @@ logger = logging.getLogger(__name__)
 logging_formatter = logging.Formatter(settings.LOGGING_FORMAT)
 
 handler = logging.StreamHandler()
-handler.setLevel(logging.INFO)
+handler.setLevel(settings.LOGGING_LEVEL)
 handler.setFormatter(logging_formatter)
 root_logger.addHandler(handler)
 
 logging.getLogger('httpx').setLevel(logging.WARNING)
-logging.getLogger('httpcore.http11').setLevel(logging.INFO)
-logging.getLogger('httpcore.connection').setLevel(logging.INFO)
+logging.getLogger('httpcore').setLevel(logging.INFO)
+logging.getLogger('matplotlib').setLevel(logging.INFO)
+logging.getLogger('telegram').setLevel(logging.INFO)
 
 MessageID = int
 
@@ -116,6 +118,8 @@ def pools_to_message(
         link_dex = html.link('DEX Screener', f'https://dexscreener.com/{settings.NETWORK.get_id()}/{pool.address}')
         links = link_dex + html.code(spaces(line_width - 22)) + link_gecko
 
+        links += '\n' + html.code(spaces(line_width - 9)) + html.link('swap.coffee', f'https://swap.coffee/dex?ft=TON&st={pool.base_token.ticker}')
+
         new_pool_message = get_updated_message_pools(html.code('\n'.join(lines)) + '\n' + links + '\n' + html.code(pool.base_token.address))
 
         if len(clear_from_html(get_full_message(new_pool_message))) <= message_max_length:
@@ -164,6 +168,9 @@ class TONSonar:
             except CancelledError as e:
                 logger.info(f'Stopping the bot{" - " + str(e) if str(e) else str(e)}')
                 await self.safely_end_all_processes()
+            except Exception as e:
+                await self.pools.close_api_sessions()
+                raise e
 
             await application.updater.stop()
             await application.stop()
@@ -175,40 +182,75 @@ class TONSonar:
     async def run_one_cycle(self):
         start_time = time.time()
 
-        logger.info('Updating pools')
+        logger.debug('Updating pools')
         await self.pools.update_using_api()
-        logger.info(f'Pools: {len(self.pools)}')
+        logger.info(f'Pools: {len([x for x in self.pools])}')
 
-        # await self.send_signal_messages()
-        # await self.bot.set_my_short_description(f'Last update: {datetime.now().strftime("%I:%M %p")}')
+        await self.send_signal_messages()
+        await self.bot.set_my_short_description(f'Last update: {datetime.now().strftime("%I:%M %p")}')
 
         cooldown = settings.UPDATES_COOLDOWN - (time.time() - start_time)
         if cooldown > 0:
-            logger.info(f'Going to asynchronous sleep - {cooldown:.0f}s')
+            logger.debug(f'Going to asynchronous sleep - {cooldown:.0f}s')
             await asyncio.sleep(cooldown)
 
     async def send_signal_messages(self):
-        logger.info(f'Checking for signals')
+        logger.debug(f'Checking for signals')
         tuples = []
 
         for p in self.pools:
-            if x := p.chart.get_signal(only_new=True):
-                tuples.append((p, *x))
+            if x := p.chart.get_signal(p, only_new=True):
+                figure = p.chart.create_plot(
+                    width=8,
+                    ratio=0.6,
+
+                    percent=True,
+                    tick_limit=1500,
+                    datetime_format='%H:%M',
+
+                    volume_opacity=0.4,
+
+                    tick_size=15,
+                    xtick_bins=5,
+                    ytick_bins=5,
+                )
+
+                buffer = BytesIO()
+                figure.savefig(
+                    buffer,
+                    format='png',
+                    dpi=200,
+                    bbox_inches='tight',
+                    pad_inches=0.3,
+                )
+                buffer.seek(0)
+
+                tuples.append((p, *x, buffer))
 
         if not tuples:
             return
         tuples.sort(key=lambda x: x[2], reverse=True)
 
+        logger.info(f'Signals: {len(tuples)}')
+
         for user_id in self.users.get_user_ids():
-            for pool, signal, magnitude in tuples:
+            for pool, signal, magnitude, buffer in tuples:
 
                 if not self.users.is_muted(user_id, pool.base_token):
                     # self.users.mute_for(user_id, pool.base_token, settings.NOTIFICATION_PUMP_COOLDOWN)
+                    # _, status = await self.send_message(message, user_id, reply_markup=self.reply_markup_mute)
 
-                    message = pools_to_message([pool], repr(signal) + f' {magnitude:.0f}%')
-                    _, status = await self.send_message(message, user_id, reply_markup=self.reply_markup_mute)
-                    if status is Status.BLOCK:
-                        break
+                    message = pools_to_message([pool], repr(signal) + f' {magnitude * 100:.0f}%')
+
+                    buffer.seek(0)
+
+                    try:
+                        await self.bot.send_photo(user_id, buffer, message, reply_markup=self.reply_markup_mute)
+                    except Exception as e:
+                        logger.warning(f'During sending message: {e}')
+
+                    # if status is Status.BLOCK:
+                    #     break
 
     async def send_message(self, text, users_id: UserId, **kwargs) -> tuple[Message | None, Status]:
         def to_info(str, append=None):

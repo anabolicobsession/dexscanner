@@ -1,3 +1,4 @@
+import logging
 from datetime import timedelta, timezone, datetime
 from itertools import chain
 from typing import Collection
@@ -16,6 +17,9 @@ _TIMEFRAME = timedelta(seconds=60)
 _NO_UPDATE = -1
 
 
+logger = logging.getLogger(__name__)
+
+
 def make_batches(sequence: list, n: int) -> list[list]:
     return [sequence[i:n + i] for i in range(0, len(sequence), n)]
 
@@ -28,8 +32,8 @@ class PoolsWithAPI(Pools):
 
     def __init__(self, **params):
         super().__init__(**params)
-        self.geckoterminal_api = GeckoTerminalAPI(cooldown=Cooldown(timedelta(seconds=10), 1.2))
-        self.dex_screener_api = DEXScreenerAPI(cooldown=Cooldown(timedelta(seconds=10), 1.2))
+        self.geckoterminal_api = GeckoTerminalAPI(cooldown=Cooldown(timedelta(seconds=5), 2))
+        self.dex_screener_api = DEXScreenerAPI(cooldown=Cooldown(timedelta(seconds=5), 2))
         self.update_counter = 0
         self.last_chart_update: dict[Pool, int] = {}
         
@@ -102,6 +106,8 @@ class PoolsWithAPI(Pools):
         return ticks
 
     async def update_using_api(self):
+        logger.debug('Starting update via API')
+
         if self._satisfy(PoolsWithAPI.APPLY_FILTER_EVERY_UPDATE):
             self.apply_filter()
 
@@ -122,11 +128,8 @@ class PoolsWithAPI(Pools):
             microseconds=timestamp.microsecond,
         )
 
-
         new_addresses = [x.address for x in new_pools]
         all_addresses = list(set([p.address for p in self]) | set(new_addresses))
-
-        print(2)
 
         self.update(
             list(chain(*[
@@ -138,36 +141,33 @@ class PoolsWithAPI(Pools):
             ]))
         )
 
-        print(3)
-
         # add the latest price to the chart, because GeckoTerminal (OHLCV) requests have quota
         for p in self:
             p.chart.update(IncompleteTick(rounded_timestamp, p.price_native))
 
         # update OHLCV of the most perspective pools (double-level sorting is used)
         priority_list = [
-            (
+            [
                 p,
                 self.last_chart_update.get(p, _NO_UPDATE),
                 p.volume * abs(p.price_change.h1),
-            ) for p in self
+            ] for p in self
         ]
         priority_list.sort(key=lambda t: (t[1], -t[2]))
         pools_for_chart_update = [t[0] for t in priority_list[:self.geckoterminal_api.get_requests_left()]]
 
-        print(4)
+        logger.debug(f'Requesting OHLCV for most prominent {self.geckoterminal_api.get_requests_left()} pools')
 
         for pool in pools_for_chart_update:
-            pool.chart.update(
-                self._geckoterminal_candlesticks_to_ticks([
-                    c for c in await self.geckoterminal_api.get_ohlcv(
-                        settings.NETWORK.get_id(),
-                        pool_address=pool.address,
-                        timeframe=Timeframe.Minute.ONE,
-                        currency=Currency.TOKEN,
-                    )
-                ])
-             )
+            candlesticks = self._geckoterminal_candlesticks_to_ticks(
+                await self.geckoterminal_api.get_ohlcv(
+                    settings.NETWORK.get_id(),
+                    pool_address=pool.address,
+                    timeframe=Timeframe.Minute.ONE,
+                    currency=Currency.TOKEN,
+                )
+            )
+            pool.chart.update(candlesticks)
             self.last_chart_update[pool] = self.update_counter
 
         self._increment_update_counter()

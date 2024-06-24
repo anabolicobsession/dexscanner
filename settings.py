@@ -5,14 +5,14 @@ import numpy as np
 from network import Network
 
 
-PRODUCTION_MODE = False
-PRODUCTION_BOT = False
+PRODUCTION_MODE = True
+PRODUCTION_BOT = True
 PRODUCTION_BOT = PRODUCTION_MODE & PRODUCTION_BOT
 
 DATABASE_NAME_MUTELISTS = 'mutelists' if PRODUCTION_BOT else '_mutelists'
 DATABASE_NAME_USERS = 'users' if PRODUCTION_BOT else '_users'
 
-UPDATES_COOLDOWN = timedelta(minutes=1).total_seconds() if PRODUCTION_MODE else timedelta(seconds=60).total_seconds()
+UPDATES_COOLDOWN = timedelta(minutes=1).total_seconds()
 NOTIFICATION_PUMP_COOLDOWN = timedelta(minutes=30) if PRODUCTION_MODE else timedelta()
 GECKO_TERMINAL_MAX_REQUESTS_PER_CYCLE = 30 if PRODUCTION_MODE else 3
 
@@ -80,9 +80,9 @@ NETWORK = Network.TON
 BLACKLIST_FILENAME = 'blacklist.csv'
 
 TELEGRAM_MESSAGE_MAX_LEN = 3700
-TELEGRAM_MESSAGE_MAX_WIDTH = 36
+TELEGRAM_MESSAGE_MAX_WIDTH = 34
 
-LOGGING_LEVEL = logging.INFO
+LOGGING_LEVEL = logging.DEBUG
 LOGGING_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 
 TELEGRAM_FORBIDDEN_BLOCK = 'Forbidden: bot was blocked by the user'

@@ -13,10 +13,12 @@ from matplotlib.dates import DateFormatter
 from matplotlib.figure import Figure
 from matplotlib.ticker import MaxNLocator
 
+import settings
 from network import Pool as NetworkPool, DEX
 
 
 TICK_MERGE_MAXIMUM_CHANGE = 0.05
+DURATION_TO_MERGE = timedelta(minutes=5)
 _TIMEFRAME = timedelta(seconds=60)
 
 
@@ -147,6 +149,10 @@ class CircularList(list):
         else:
             raise IndexError('No items to pop')
 
+    def pop_all(self):
+        while self.size:
+            self.pop()
+
 
 @dataclass(frozen=True)
 class Trend:
@@ -162,9 +168,19 @@ class Trend:
         return a.change * b.change >= 0
 
     @staticmethod
-    def can_be_merged(a, b, c):
+    def can_be_merged(a, b, c, ticks):
+        # a1, a2 = ticks[a.beginning].timestamp, ticks[a.end].timestamp
+        # b1, b2 = ticks[b.beginning].timestamp, ticks[b.end].timestamp
+        # c1, c2 = ticks[c.beginning].timestamp, ticks[c.end].timestamp
+
         if Trend.have_same_trend(a, c) and not Trend.have_same_trend(a, b):
-            return abs(b.change) <= min(abs(a.change), abs(c.change)) and abs(b.change) <= TICK_MERGE_MAXIMUM_CHANGE
+
+            # if b1 - b2 <= DURATION_TO_MERGE and b1 - b2 <= min(a1 - a2, c1 - c2):
+            #     return True
+
+            if abs(b.change) <= min(abs(a.change), abs(c.change)) and abs(b.change) <= TICK_MERGE_MAXIMUM_CHANGE:
+                return True
+
         return False
 
 
@@ -174,9 +190,13 @@ class Pattern:
     min_duration: timedelta = None
     max_duration: timedelta = None
 
-    def match(self, trend: Trend, ticks: Sequence[BaseTick]):
+    def match(self, trend: Trend, ticks: Sequence[BaseTick], p):
 
-        if trend.change >= self.min_change >= 0 or 0 >= self.min_change >= trend.change:
+        base = 150_000
+        scale_factor = 1 if p.liquidity >= base else 1 + 3 * (base - p.liquidity) / base
+        min_change = self.min_change * scale_factor
+
+        if trend.change >= min_change >= 0 or 0 >= min_change >= trend.change:
 
             duration = ticks[trend.end].timestamp - ticks[trend.beginning].timestamp
 
@@ -191,23 +211,26 @@ class Pattern:
         return False
 
 
+_FACTOR = 1 if settings.PRODUCTION_MODE else 0
+
+
 def _fraction(percent):
-    return percent / 100
+    return percent / 100 * _FACTOR
 
 
 class Signal(Enum):
 
     UPTREND = [
-        Pattern(_fraction(5), min_duration=timedelta(minutes=20)),
+        Pattern(_fraction(10), min_duration=timedelta(minutes=30)),
     ]
 
     DUMP = [
-        Pattern(_fraction(-5),  max_duration=timedelta(minutes=10)),
+        Pattern(_fraction(-10),  max_duration=timedelta(minutes=10)),
     ]
 
     DOWNTREND_REVERSAL = [
-        Pattern(_fraction(-10), min_duration=timedelta(minutes=20)),
-        Pattern(_fraction(3)),
+        Pattern(_fraction(-20), min_duration=timedelta(minutes=30)),
+        Pattern(_fraction(5)),
     ]
 
     def __len__(self):
@@ -233,20 +256,40 @@ class Chart:
         return f'{type(self).__name__}({[repr(t) for t in self.ticks]})'
 
     def update(self, ticks: BaseTick | Collection[BaseTick]):
+        ticks = deepcopy(ticks)
+
         if isinstance(ticks, BaseTick):
             ticks = [ticks]
 
         if ticks:
-            self.ticks.set(
-                next(
-                    (
-                        i for i in range(len(self.ticks) - 1, -1, -1)
-                        if self.ticks[i].timestamp == ticks[0].timestamp
-                    ),
-                    len(self.ticks)
-                ),
-                ticks
-            )
+            # if len(ticks) > 1:
+            #     print(f'Chart ticks are being updated: {len(self.ticks)} -> +{len(ticks)}')
+
+            for i in range(len(self.ticks)):
+                for j in range(len(ticks)):
+                    if self.ticks[i].timestamp == ticks[j].timestamp:
+                        self.ticks.set(
+                            i,
+                            ticks[j:]
+                        )
+                        return
+
+            self.ticks.pop_all()
+            self.ticks.extend(ticks)
+
+            # self.ticks.set(
+            #     next(
+            #         (
+            #             i for i in range(len(self.ticks) - 1, -1, -1)
+            #             if self.ticks[i].timestamp == ticks[0].timestamp
+            #         ),
+            #         len(self.ticks)
+            #     ),
+            #     ticks
+            # )
+            #
+            # if len(ticks) > 1:
+            #     print(f'Result: {len(self.ticks)}')
 
     @staticmethod
     def _construct_segments(ticks):
@@ -280,7 +323,7 @@ class Chart:
                 i = max(i - 2, 0)
                 continue
 
-            if Trend.can_be_merged(t1, t2, t3):
+            if Trend.can_be_merged(t1, t2, t3, ticks):
                 trends.remove(t1)
                 trends.remove(t2)
                 trends.remove(t3)
@@ -292,7 +335,7 @@ class Chart:
 
         return trends
 
-    def get_signal(self, only_new=False) -> tuple[Signal, Magnitude] | None:
+    def get_signal(self, pool, only_new=False) -> tuple[Signal, Magnitude] | None:
         if len(self.ticks) <= 3:
             return None
 
@@ -305,18 +348,26 @@ class Chart:
             last_trends = [trends[i] for i in range(-len(signal), 0)]
 
             if all([
-                p.match(t, self.ticks)
+                p.match(t, self.ticks, pool)
                 for p, t in zip(signal.get_pattern(), last_trends)
             ]):
                 if only_new:
                     first_timestamp = self.ticks[last_trends[0].beginning].timestamp
 
-                    if first_timestamp < self.signal_end_timestamp:
+                    print(f'Old signal end: {self.signal_end_timestamp} - New signal - {first_timestamp}--{self.ticks[last_trends[-1].end].timestamp}')
+
+                    if self.signal_end_timestamp and first_timestamp < self.signal_end_timestamp:
+                        print('Signal not accepted')
                         return None
+
+                    print('Signal accepted')
 
                     self.signal_end_timestamp = self.ticks[last_trends[-1].end].timestamp
 
-                return signal, max([abs(x.change) for x in last_trends])
+                magnitude = max([abs(x.change) for x in last_trends])
+                # print(f'Match all! {signal}/{magnitude} - {last_trends}')
+
+                return signal, magnitude
 
         return None
 
@@ -364,11 +415,11 @@ class Chart:
 
     def create_plot(
             self,
-            width=12,
+            width=16,
             ratio=0.25,
 
             percent=False,
-            tick_limit=None,
+            tick_limit=2000,
             datetime_format='%d %H:%M',
 
             volume_width=0.5,
@@ -489,7 +540,10 @@ class Pool(NetworkPool):
     fdv: float = None
     creation_date: datetime = None
 
-    chart: Chart = Chart()
+    chart: Chart = None
+
+    def __post_init__(self):
+        self.chart = Chart()
 
     def update(self, other: Self):
         super().update(other)
@@ -503,3 +557,9 @@ class Pool(NetworkPool):
         self.price_change = other.price_change
         self.dex.update(other.dex)
         self.creation_date = other.creation_date
+
+    def __eq__(self, other):
+        return super().__eq__(other)
+
+    def __hash__(self):
+        return super().__hash__()

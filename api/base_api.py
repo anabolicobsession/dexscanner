@@ -120,7 +120,7 @@ class BaseAPI(ABC):
 
                 if e.status == Status.RATE_LIMIT_EXCEEDED.value and e.message == Status(e.status).to_message():
                     if self.cooldown:
-                        logger.info(f'Going to sleep for {self.cooldown.get()}: {e.message}')
+                        logger.warning(f'{e.message} ({self.base_url}) - Going to sleep for {self.cooldown.get()}')
                         await sleep(self.cooldown.make())
                         continue
                     else:
