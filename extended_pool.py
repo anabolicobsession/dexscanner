@@ -56,7 +56,7 @@ class BaseTick(_AbstractDataclass):
 
 
 @dataclass(frozen=True)
-class Tick(BaseTick):
+class CompleteTick(BaseTick):
     volume: float
 
 
@@ -84,8 +84,8 @@ class CircularList(list):
 
     def __getitem__(self, index: Index | slice):
         if isinstance(index, int):
-            if not -self.size < index < self.size:
-                raise IndexError(f'Index out of range: {index}')
+            if not -self.size <= index < self.size:
+                raise IndexError(f'Index {index} out of range [{-self.size}, {self.size})')
             return super().__getitem__(self._get_index(index))
         else:
             start = index.start if index.start is not None else 0
@@ -135,14 +135,14 @@ class CircularList(list):
         if not 0 <= index <= self.size:
             raise IndexError(f'Index out of range: {index}')
 
-        if index + len(iterable) >= self.size:
-            self.size = index
-            self.extend(iterable)
-        else:
-            raise IndexError(
-                'Too few items to set or too small index. '
-                'New items must override existing items for a small enough index, otherwise behaviour is undefined'
-            )
+        # if index + len(iterable) >= self.size:
+        self.size = index
+        self.extend(iterable)
+        # else:
+        #     raise IndexError(
+        #         'Too few items to set or too small index. '
+        #         'New items must override existing items for a small enough index, otherwise behaviour is undefined'
+        #     )
 
     def pop(self, index=None):
         if self.size:
@@ -223,11 +223,11 @@ def _fraction(percent):
 class Signal(Enum):
 
     UPTREND = [
-        Pattern(_fraction(10), min_duration=timedelta(minutes=120)),
+        Pattern(_fraction(15), min_duration=timedelta(minutes=150)),
     ]
 
     DUMP = [
-        Pattern(_fraction(-10),  max_duration=timedelta(minutes=20)),
+        Pattern(_fraction(-15),  max_duration=timedelta(minutes=20)),
     ]
 
     DOWNTREND_REVERSAL = [
@@ -265,15 +265,26 @@ class Chart:
 
         if ticks:
             for i in range(len(self.ticks)):
-                for j in range(len(ticks)):
-                    if self.ticks[i].timestamp == ticks[j].timestamp:
-                        self.ticks.set(
-                            i,
-                            ticks[j:]
-                        )
-                        return
+                if self.ticks[i].timestamp >= ticks[0].timestamp:
+                    i_ticks = self.ticks[i:]
 
-            self.ticks.pop_all()
+                    if i_ticks[-1].timestamp > ticks[-1].timestamp:
+                        first_index = next(j for j, x in enumerate(i_ticks) if x.timestamp > ticks[-1].timestamp)
+                        ticks.extend(i_ticks[first_index:])
+
+                    self.ticks.set(
+                        i,
+                        ticks,
+                    )
+
+                    return
+
+            # if len(self.ticks) == 0 and not isinstance(ticks[0], CompleteTick):
+            #     return
+
+            if self.ticks and self.ticks[-1].timestamp > ticks[0].timestamp:
+                raise IndexError('Charts can\'t be concatenated')
+
             self.ticks.extend(ticks)
 
     @staticmethod
@@ -360,6 +371,10 @@ class Chart:
                                 f'Trends: {ts}'
                             )
 
+                            logger.debug(
+                                f'Last ticks: {", ".join([repr(x) for x in (self.ticks[-3], self.ticks[-2], self.ticks[-1])])}'
+                            )
+
                         self.signal_end_timestamp = self.ticks[last_trends[-1].end].timestamp
 
                     magnitude = max([abs(x.change) for x in last_trends])
@@ -376,7 +391,7 @@ class Chart:
 
         for x in self.ticks[1:]:
             if isinstance(x, IncompleteTick):
-                x = Tick(x.timestamp, x.price, 0)
+                x = CompleteTick(x.timestamp, x.price, 0)
 
             if x.timestamp > ticks[-1].timestamp + _TIMEFRAME:
                 last_tick = ticks[-1]
@@ -384,12 +399,12 @@ class Chart:
 
                 for i in range(1, diff):
                     ticks.append(
-                        Tick(
+                        CompleteTick(
                             last_tick.timestamp + _TIMEFRAME * i,
                             last_tick.price,
                             0,
                         )
-                        if isinstance(last_tick, Tick) else
+                        if isinstance(last_tick, CompleteTick) else
                         IncompleteTick(
                             last_tick.timestamp + _TIMEFRAME * i,
                             last_tick.price,
@@ -434,6 +449,7 @@ class Chart:
 
         if self.figure:
             plt.close(self.figure)
+            plt.clf()
             self.figure = None
 
         ticks = self._get_padded_ticks()

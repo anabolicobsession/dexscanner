@@ -115,12 +115,12 @@ def pools_to_message(
         if pool.creation_date: add_line('Age:', difference_to_pretty_str(pool.creation_date))
 
         add_line(
-            'USD:',
+            'Price:',
             format_number(pool.price_usd, 4, 6, symbol='$', significant_figures=2),
         )
 
         add_line(
-            'Native:',
+            'Price:',
             format_number(pool.price_native, 4, 6, symbol=settings.NETWORK.name + ' ', significant_figures=2),
         )
 

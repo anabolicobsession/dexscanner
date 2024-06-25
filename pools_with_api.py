@@ -5,7 +5,7 @@ from typing import Collection
 
 from api.base_api import Cooldown
 from network import Network, Token, DEX
-from extended_pool import Pool, Tick, TimePeriodsData, IncompleteTick
+from extended_pool import Pool, CompleteTick, TimePeriodsData, IncompleteTick
 from pools import Pools
 from api.geckoterminal_api import GeckoTerminalAPI, PoolSource, SortBy, Timeframe, Currency, \
     Candlestick as GeckoTerminalCandlestick
@@ -83,13 +83,13 @@ class PoolsWithAPI(Pools):
         )
 
     @staticmethod
-    def _geckoterminal_candlesticks_to_ticks(candlesticks: Collection[GeckoTerminalCandlestick]) -> list[Tick]:
+    def _geckoterminal_candlesticks_to_ticks(candlesticks: Collection[GeckoTerminalCandlestick]) -> list[CompleteTick]:
         ticks = []
 
         for c in candlesticks:
             if not ticks or c.timestamp > ticks[-1].timestamp + _TIMEFRAME:
                 ticks.append(
-                    Tick(
+                    CompleteTick(
                         timestamp=c.timestamp - _TIMEFRAME,
                         price=c.open,
                         volume=0,
@@ -97,7 +97,7 @@ class PoolsWithAPI(Pools):
                 )
 
             ticks.append(
-                Tick(
+                CompleteTick(
                     timestamp=c.timestamp,
                     price=c.close,
                     volume=c.volume,
@@ -107,7 +107,10 @@ class PoolsWithAPI(Pools):
         return ticks
 
     async def update_using_api(self):
-        # logger.debug('Updating pools via API. Applying filter')
+        logger.debug('Applying filter on pools')
+
+        p = next((x for x in self if x.base_token.ticker == 'FISH'), None)
+        if p: logger.debug(f'Ticks: {len(p.chart.ticks)}, last tick: {p.chart.ticks[-1] if len(p.chart.ticks) else "None"}')
 
         if self._satisfy(PoolsWithAPI.APPLY_FILTER_EVERY_UPDATE):
             self.apply_filter()
@@ -133,7 +136,7 @@ class PoolsWithAPI(Pools):
         new_addresses = [x.address for x in new_pools]
         all_addresses = list(set([p.address for p in self]) | set(new_addresses))
 
-        # logger.debug('Updating pools via DEX Screener')
+        logger.debug('Updating pools via DEX Screener')
 
         self.update(
             list(chain(*[
@@ -145,7 +148,7 @@ class PoolsWithAPI(Pools):
             ]))
         )
 
-        # logger.debug('Updating chart last tick from DEX Screener response')
+        logger.debug('Updating chart last tick from DEX Screener response')
 
         # add the latest price to the chart, because GeckoTerminal (OHLCV) requests have quota
         for p in self:
@@ -162,7 +165,7 @@ class PoolsWithAPI(Pools):
         priority_list.sort(key=lambda t: (t[1], -t[2]))
         pools_for_chart_update = [t[0] for t in priority_list[:self.geckoterminal_api.get_requests_left()]]
 
-        # logger.debug(f'Getting OHLCV for most prominent {self.geckoterminal_api.get_requests_left()} pools')
+        logger.debug(f'Getting OHLCV for most prominent {self.geckoterminal_api.get_requests_left()} pools')
 
         for pool in pools_for_chart_update:
             candlesticks = self._geckoterminal_candlesticks_to_ticks(
@@ -173,10 +176,23 @@ class PoolsWithAPI(Pools):
                     currency=Currency.TOKEN,
                 )
             )
-            pool.chart.update(candlesticks)
-            self.last_chart_update[pool] = self.update_counter
 
-        # logger.debug('Finishing update')
+            last_tick = pool.chart.ticks[-1] if len(pool.chart.ticks) else None
+            old_n = len(pool.chart.ticks)
+
+            try:
+                pool.chart.update(candlesticks)
+                ticks = f'Ticks: {old_n} + {len(candlesticks)} -> {len(pool.chart.ticks)}'
+                print(
+                    f'{pool.base_token.ticker:<12} - {ticks:<25} - Last: {last_tick} vs {candlesticks[-1]}'
+                )
+            except Exception as e:
+                ticks = f'Ticks: {old_n} + {len(candlesticks)} -> ?'
+                print(
+                    f'{pool.base_token.ticker:<12} - {ticks:<25} - Last: {last_tick} vs {candlesticks[-1]}'
+                )
+
+            self.last_chart_update[pool] = self.update_counter
 
         self._increment_update_counter()
         self.geckoterminal_api.reset_request_counter()

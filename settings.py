@@ -19,9 +19,8 @@ GECKO_TERMINAL_MAX_REQUESTS_PER_CYCLE = 30 if PRODUCTION_MODE else 3
 POOL_DEFAULT_FILTER = (
     lambda p:
     p.quote_token.is_native_currency() and
-    p.volume > 10_000 and
-    p.liquidity > 5_000
-    # p.makers > 50
+    p.liquidity > 10_000 and
+    p.volume > 20_000
 )
 
 PUMP_MIN_SCORE = 8
