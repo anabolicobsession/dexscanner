@@ -230,9 +230,14 @@ class Signal(Enum):
         Pattern(_fraction(-15),  max_duration=timedelta(minutes=20)),
     ]
 
-    DOWNTREND_REVERSAL = [
+    DOWNTREND_REVERSAL_SLOW = [
         Pattern(_fraction(-20), min_duration=timedelta(minutes=30)),
-        Pattern(_fraction(5)),
+        Pattern(_fraction(5), min_duration=timedelta(minutes=15)),
+    ]
+
+    DOWNTREND_REVERSAL_FAST = [
+        Pattern(_fraction(-20), min_duration=timedelta(minutes=30)),
+        Pattern(_fraction(10), min_duration=timedelta(minutes=5)),
     ]
 
     def __len__(self):
