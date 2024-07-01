@@ -68,7 +68,7 @@ class PoolsWithAPI(Pools):
 
             price_usd=p.price_usd,
             price_native=p.price_native,
-            liquidity=p.liquidity.total,
+            liquidity=p.liquidity.total if p.liquidity else p.liquidity,
             volume=p.volume.h24,
             fdv=p.fdv,
 

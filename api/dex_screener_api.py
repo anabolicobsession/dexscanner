@@ -44,8 +44,8 @@ class Pool(BaseModel):
     base_token: Token = Field(..., alias='baseToken')
     quote_token: Token = Field(..., alias='quoteToken')
 
-    price_usd: float = Field(..., alias='priceUsd')
     price_native: float = Field(..., alias='priceNative')
+    price_usd: float = Field(default=None, alias='priceUsd')
     liquidity: Liquidity = None
     fdv: float = None
 
