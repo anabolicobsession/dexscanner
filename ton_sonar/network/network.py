@@ -1,3 +1,4 @@
+from datetime import datetime
 from enum import Enum
 from typing import Self
 from dataclasses import dataclass
@@ -80,11 +81,29 @@ class DEX:
 
 
 @dataclass
+class TimePeriodsData:
+    m5:  float = None
+    h1:  float = None
+    h6:  float = None
+    h24: float = None
+
+
+@dataclass
 class Pool:
     network: Network
     address: Address
     base_token: Token
     quote_token: Token
+
+    price_usd: float
+    price_native: float
+    volume: float
+    price_change: TimePeriodsData
+    dex: DEX
+
+    liquidity: float = None
+    fdv: float = None
+    creation_date: datetime = None
 
     def __eq__(self, other):
         return isinstance(other, Pool) and self.network == other.network and self.address == other.address
@@ -98,3 +117,13 @@ class Pool:
     def update(self, other: Self):
         self.base_token.update(other.base_token)
         self.quote_token.update(other.quote_token)
+
+        self.price_usd = other.price_usd
+        self.price_native = other.price_native
+        self.volume = other.volume
+        self.price_change = other.price_change
+        self.dex.update(other.dex)
+
+        self.liquidity = other.liquidity
+        self.fdv = other.fdv
+        self.creation_date = other.creation_date

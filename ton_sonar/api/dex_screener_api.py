@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field, AwareDatetime
 
-from api.base_api import BaseAPI, JSON, UnsupportedSchema
+from api import API, JSON, UnsupportedSchema
 
 
 NetworkId = str
@@ -58,8 +58,7 @@ class Pool(BaseModel):
     url: str = Field(...)
 
 
-class DEXScreenerAPI(BaseAPI):
-
+class DEXScreenerAPI(API):
     BASE_URL = 'https://api.dexscreener.io/latest/dex'
     SCHEMA_VERSION = '1.0.0'
     MAX_ADDRESSES = 30

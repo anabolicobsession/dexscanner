@@ -15,8 +15,8 @@ from matplotlib.figure import Figure
 from matplotlib.ticker import MaxNLocator
 
 import settings
-from network import Pool as NetworkPool, DEX
-
+from config.config import config
+from network import Pool as NetworkPool
 
 TICK_MERGE_MAXIMUM_CHANGE = 0.1
 LAST_TREND_DURATION = timedelta(minutes=3)
@@ -24,9 +24,7 @@ LAST_TREND_DURATION = timedelta(minutes=3)
 DURATION_TO_MERGE = timedelta(minutes=3)
 _TIMEFRAME = timedelta(seconds=60)
 Index = int
-CHART_MAX_TICKS = 2000
-
-
+CHART_MAX_TICKS = 1000
 logger = logging.getLogger(__name__)
 
 
@@ -254,7 +252,7 @@ Magnitude = float
 
 class Chart:
     def __init__(self):
-        self.ticks: CircularList[BaseTick] = CircularList(capacity=CHART_MAX_TICKS)
+        self.ticks: deque[BaseTick] = deque(maxlen=config.get('Chart', 'ticks'))
         self.signal_end_timestamp: datetime | None = None
         self.figure: Figure | None = None
 
@@ -525,47 +523,10 @@ class Chart:
         if self.figure:
             plt.close(self.figure)
 
-@dataclass
-class TimePeriodsData:
-    m5:  float = None
-    h1:  float = None
-    h6:  float = None
-    h24: float = None
-
 
 @dataclass
 class Pool(NetworkPool):
-    price_usd: float
-    price_native: float
-    volume: float
-
-    price_change: TimePeriodsData
-    dex: DEX
-
-    liquidity: float = None
-    fdv: float = None
-    creation_date: datetime = None
-
     chart: Chart = None
 
     def __post_init__(self):
         self.chart = Chart()
-
-    def update(self, other: Self):
-        super().update(other)
-
-        self.price_usd = other.price_usd
-        self.price_native = other.price_native
-        self.liquidity = other.liquidity
-        self.volume = other.volume
-        self.fdv = other.fdv
-
-        self.price_change = other.price_change
-        self.dex.update(other.dex)
-        self.creation_date = other.creation_date
-
-    def __eq__(self, other):
-        return super().__eq__(other)
-
-    def __hash__(self):
-        return super().__hash__()

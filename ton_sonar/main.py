@@ -13,9 +13,9 @@ from telegram.constants import ParseMode
 from telegram.ext import ApplicationBuilder, ContextTypes, Defaults, CallbackQueryHandler
 from aiogram import html
 
-import network
+from ton_sonar import network
 import settings
-from pools_with_api import PoolsWithAPI
+from ton_sonar.pools_with_api import PoolsWithAPI
 from extended_pool import Pool
 from users import UserId, Users
 from utils import format_number, clear_from_html, difference_to_pretty_str
@@ -30,6 +30,7 @@ handler.setLevel(settings.LOGGING_LEVEL)
 handler.setFormatter(logging_formatter)
 root_logger.addHandler(handler)
 
+logging.getLogger('asyncio').setLevel(logging.WARNING)
 logging.getLogger('httpx').setLevel(logging.WARNING)
 logging.getLogger('httpcore').setLevel(logging.INFO)
 logging.getLogger('matplotlib').setLevel(logging.INFO)
@@ -116,12 +117,12 @@ def pools_to_message(
 
         add_line(
             'Price:',
-            format_number(pool.price_usd, 4, 6, symbol='$', significant_figures=2),
+            format_number(pool.price_usd, 4, 9, symbol='$', significant_figures=2),
         )
 
         add_line(
             'Price:',
-            format_number(pool.price_native, 4, 6, symbol=settings.NETWORK.name + ' ', significant_figures=2),
+            format_number(pool.price_native, 4, 9, symbol=settings.NETWORK.name + ' ', significant_figures=2),
         )
 
         geckoterminal = html.link('GeckoTerminal', f'https://www.geckoterminal.com/{settings.NETWORK.get_id()}/pools/{pool.address}')

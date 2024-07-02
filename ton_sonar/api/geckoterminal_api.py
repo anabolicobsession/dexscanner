@@ -4,7 +4,7 @@ from enum import Enum
 
 from pydantic import BaseModel, Field, AwareDatetime
 
-from api.base_api import BaseAPI, JSON, EmptyData
+from api import API, JSON, EmptyData
 
 
 NetworkId = str
@@ -57,8 +57,7 @@ class Candlestick(BaseModel):
     volume: float = Field(...)
 
 
-class GeckoTerminalAPI(BaseAPI):
-
+class GeckoTerminalAPI(API):
     BASE_URL = 'https://api.geckoterminal.com/api/v2'
 
     MIN_PAGE = 1

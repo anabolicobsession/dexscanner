@@ -78,7 +78,7 @@ class EmptyData(Exception):
     ...
 
 
-class BaseAPI(ABC):
+class API(ABC):
 
     URL_PATH_SEPARATOR = '/'
     HEADERS = {'cache-control': 'max-age=0'}
@@ -105,7 +105,7 @@ class BaseAPI(ABC):
         return max(self.REQUEST_LIMIT - self.request_counter, 0) if self.REQUEST_LIMIT else None
 
     def _form_url(self, *path_segments):
-        return BaseAPI.URL_PATH_SEPARATOR.join([self.base_url, *path_segments])
+        return API.URL_PATH_SEPARATOR.join([self.base_url, *path_segments])
 
     async def _get(self, *url_path_segments, **params) -> Response:
         if not self.session:
@@ -113,7 +113,7 @@ class BaseAPI(ABC):
 
         while True:
             try:
-                response = await self.session.get(self._form_url(*url_path_segments), **params, headers=BaseAPI.HEADERS)
+                response = await self.session.get(self._form_url(*url_path_segments), **params, headers=API.HEADERS)
                 self._increment_request_counter()
 
             except ClientResponseError as e:

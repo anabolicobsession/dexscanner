@@ -3,9 +3,10 @@ from datetime import timedelta, timezone, datetime
 from itertools import chain
 from typing import Collection
 
-from api.base_api import Cooldown
+from api.api import Cooldown
 from network import Network, Token, DEX
-from extended_pool import Pool, CompleteTick, TimePeriodsData, IncompleteTick
+from pool_with_chart import Pool, CompleteTick, TimePeriodsData, IncompleteTick
+from network import TimePeriodsData
 from pools import Pools
 from api.geckoterminal_api import GeckoTerminalAPI, PoolSource, SortBy, Timeframe, Currency, \
     Candlestick as GeckoTerminalCandlestick

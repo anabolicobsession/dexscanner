@@ -5,7 +5,7 @@ import psycopg2
 import pytz
 
 import settings
-from network import Token
+from ton_sonar.network import Token
 
 
 UserId = int

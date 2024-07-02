@@ -2,11 +2,11 @@ import logging
 from datetime import timedelta
 import numpy as np
 
-from network import Network
+from ton_sonar.network import Network
 
 
 PRODUCTION_MODE = True
-PRODUCTION_BOT = True
+PRODUCTION_BOT = False
 PRODUCTION_BOT = PRODUCTION_MODE & PRODUCTION_BOT
 
 DATABASE_NAME_MUTELISTS = 'mutelists' if PRODUCTION_MODE else '_mutelists'
